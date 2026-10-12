@@ -35,6 +35,10 @@
     density: store.get("density", "grid"),
     adminTab: "links",
     musicSource: "",
+    musicGeneration: 0,
+    musicAutoplaySource: "",
+    musicAutoplayBlocked: false,
+    musicUserPaused: false,
     toastTimer: null,
   };
   const symbols = {
@@ -120,7 +124,7 @@
       if (
         music &&
         !/^https:\/\//i.test(raw) &&
-        !/^\/media\/music\.(mp3|ogg|wav|m4a)$/i.test(raw)
+        !/^\/media\/music\.(mp3|ogg|wav|m4a)(\?v=[0-9a-f]{16})?$/i.test(raw)
       )
         return "";
       const u = new URL(raw, location.origin);
@@ -274,6 +278,7 @@
       else updatePortalResults();
     }
   });
+  audio.muted = store.get("muted", false) === true;
   const volume = Number(store.get("volume", 0.5));
   audio.volume = Number.isFinite(volume)
     ? Math.min(1, Math.max(0, volume))
@@ -696,19 +701,60 @@
   function syncMusic() {
     const settings = state.data.settings;
     const source = safeUrl(settings.musicUrl, true);
-    $("#music-title").textContent = settings.musicTitle || "晚风电台";
+    $("#music-title").textContent = settings.musicTitle || "自定义背景音乐";
+    const wasPlaying = !audio.paused;
     if (source !== state.musicSource) {
+      state.musicGeneration++;
+      state.musicAutoplayBlocked = false;
       audio.pause();
       if (source) audio.src = source;
       else audio.removeAttribute("src");
       audio.load();
       state.musicSource = source;
+      if (source && wasPlaying && !state.musicUserPaused) {
+        state.musicAutoplaySource = source;
+        playMusic(true);
+      }
+    }
+    if (
+      source &&
+      settings.musicAutoplay === true &&
+      !state.musicUserPaused &&
+      state.musicAutoplaySource !== source
+    ) {
+      state.musicAutoplaySource = source;
+      playMusic(true);
+    }
+    updateMusic();
+  }
+  async function playMusic(automatic = false) {
+    const generation = state.musicGeneration;
+    state.musicAutoplayBlocked = false;
+    try {
+      await audio.play();
+      if (generation === state.musicGeneration)
+        state.musicAutoplayBlocked = false;
+    } catch (error) {
+      if (generation !== state.musicGeneration || error.name === "AbortError")
+        return;
+      if (error.name === "NotAllowedError") {
+        state.musicAutoplayBlocked = true;
+        if (!automatic) toast("浏览器限制了播放，请再次点击播放器开启音乐。");
+      } else if (!automatic)
+        toast("播放失败，请检查音源格式或地址，然后重试。");
     }
     updateMusic();
   }
   function updateMusic() {
     const source = Boolean(state.musicSource);
     $("#music-play").textContent = audio.paused ? "▷" : "Ⅱ";
+    const blocked = source && audio.paused && state.musicAutoplayBlocked;
+    $("#music-play").classList.toggle("autoplay-blocked", blocked);
+    $("#music-play").title = blocked
+      ? "浏览器限制自动播放，点击开启背景音乐"
+      : audio.paused
+        ? "播放背景音乐"
+        : "暂停背景音乐";
     $("#music-play").setAttribute(
       "aria-label",
       audio.paused ? "播放音乐" : "暂停音乐",
@@ -727,26 +773,27 @@
           ? audio.muted
             ? "正在播放 · 已静音"
             : "正在播放 · 让晚风有声音"
-          : "已暂停 · 点击播放";
+          : blocked
+            ? "点击 ▷ 开启音乐 · 浏览器限制自动播放"
+            : "已暂停 · 点击播放";
   }
   $("#music-play").addEventListener("click", async () => {
     if (!state.musicSource) {
       toast("尚未配置音源。管理员可在「管理 → 站点设置」上传或填写音乐地址。");
       return;
     }
-    if (!audio.paused) audio.pause();
-    else {
-      audio.muted = false;
-      try {
-        await audio.play();
-      } catch {
-        toast("播放失败，请检查音源格式或地址，然后重试。");
-      }
+    if (!audio.paused) {
+      state.musicUserPaused = true;
+      audio.pause();
+    } else {
+      state.musicUserPaused = false;
+      await playMusic();
     }
     updateMusic();
   });
   $("#music-mute").addEventListener("click", () => {
     audio.muted = !audio.muted;
+    store.set("muted", audio.muted);
     updateMusic();
   });
   ["play", "pause", "volumechange", "error", "ended"].forEach((name) =>
@@ -1236,12 +1283,17 @@
         full: true,
         maxLength: 200,
       }),
-      field("音乐标题", "musicTitle", settings.musicTitle, "text", {
+      field("默认背景音乐标题", "musicTitle", settings.musicTitle, "text", {
         maxLength: 100,
       }),
-      field("音乐地址", "musicUrl", settings.musicUrl, "text", {
+      checkbox(
+        "打开网页时自动播放背景音乐",
+        "musicAutoplay",
+        settings.musicAutoplay === true,
+      ),
+      field("默认背景音乐地址", "musicUrl", settings.musicUrl, "text", {
         placeholder: "https://… 或 /media/music.mp3",
-        hint: "仅支持 HTTPS 或上传生成的 /media/music.mp3（亦支持 ogg/wav/m4a）。留空则关闭音源，不会自动播放。",
+        hint: "默认背景音乐：填写 HTTPS 音源，或使用下方上传功能自动填入。留空关闭背景音乐。",
       }),
     );
     const err = el("p", "form-error");
@@ -1250,7 +1302,16 @@
     const submit = button("保存站点设置", "button primary");
     submit.type = "submit";
     actions.append(submit);
-    form.append(grid, err, actions);
+    form.append(
+      grid,
+      el(
+        "p",
+        "hint",
+        "自动播放受浏览器策略限制：打开页面先尝试播放，若被拦截会显示一键开启；访客的静音和音量偏好始终保留。",
+      ),
+      err,
+      actions,
+    );
     bindForm(form, submit, async (data) => {
       const musicUrl = String(data.get("musicUrl")).trim();
       if (musicUrl && !safeUrl(musicUrl, true))
@@ -1266,6 +1327,7 @@
           subtitle: String(data.get("subtitle")).trim(),
           musicTitle: String(data.get("musicTitle")).trim(),
           musicUrl,
+          musicAutoplay: data.has("musicAutoplay"),
         },
         "站点设置已保存",
       );
@@ -1276,7 +1338,7 @@
       el(
         "p",
         "hint",
-        "选择你有权使用的音频。支持 MP3 / OGG / WAV / M4A，最大 25 MiB。上传后会自动保存为当前音源；播放仍需用户主动点击。",
+        "选择你有权使用的音频。支持 MP3 / OGG / WAV / M4A，最大 25 MiB。上传成功后直接设为站点默认背景音乐，标题取文件名；自动播放沿用上方已保存的开关。",
       ),
     );
     const upload = el("form");
@@ -1291,7 +1353,7 @@
     label.append(input);
     const uploadErr = el("p", "form-error");
     uploadErr.setAttribute("role", "alert");
-    const uploadButton = button("上传并使用", "button");
+    const uploadButton = button("上传并设为默认背景音乐", "button primary");
     uploadButton.type = "submit";
     upload.append(label, uploadErr, uploadButton);
     bindForm(upload, uploadButton, async () => {
@@ -1311,12 +1373,8 @@
       });
       if (!result.musicUrl)
         throw new Error("上传响应中缺少音乐地址，请刷新检查。");
-      await api("/api/settings", {
-        method: "PUT",
-        body: { ...state.data.settings, musicUrl: result.musicUrl },
-      });
       await refresh();
-      toast("音乐已上传并配置，点击播放器即可收听。");
+      toast("上传成功，已设为默认背景音乐。自动播放按站点设置执行。");
     });
     uploadSection.append(upload);
     panel.append(form, uploadSection);

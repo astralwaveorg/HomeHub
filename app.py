@@ -14,6 +14,7 @@ import sqlite3
 import sys
 import threading
 import time
+import unicodedata
 from contextlib import contextmanager
 from http.cookies import SimpleCookie
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -77,7 +78,7 @@ def url(value, allow_empty=False, local_media=False):
     value = text(value, '链接', 2048)
     if allow_empty and not value:
         return ''
-    if local_media and re.fullmatch(r'/media/music\.(mp3|ogg|wav|m4a)', value):
+    if local_media and re.fullmatch(r'/media/music\.(mp3|ogg|wav|m4a)(?:\?v=[0-9a-f]{16})?', value):
         return value
     try:
         u = urlsplit(value)
@@ -123,6 +124,10 @@ def settings_fields(v, old):
     if not isinstance(v, dict):
         raise APIError(400, '设置格式不正确')
     out = dict(old)
+    if 'musicAutoplay' in v and not isinstance(v['musicAutoplay'], bool):
+        raise APIError(400, '音乐自动播放设置必须为布尔值')
+    # Legacy settings clients must not reset a newer autoplay preference.
+    out['musicAutoplay'] = v.get('musicAutoplay', old.get('musicAutoplay', False))
     for key, limit in [('title', 40), ('tagline', 100), ('subtitle', 200), ('musicTitle', 100)]:
         if key in v:
             out[key] = text(v[key], key, limit, key == 'title')
@@ -285,9 +290,11 @@ class Handler(BaseHTTPRequestHandler):
         if not s:
             used = {x['category_id'] for x in links}
             categories = [x for x in categories if x['id'] in used]
+        settings = json.loads(c.execute('SELECT data FROM settings').fetchone()[0])
+        settings.setdefault('musicAutoplay', False)
         return {'authenticated':bool(s), 'csrf':s['csrf'] if s else None,
                 'username':c.execute('SELECT username FROM admin').fetchone()[0] if s else None,
-                'settings':json.loads(c.execute('SELECT data FROM settings').fetchone()[0]),
+                'settings':settings,
                 'categories':categories, 'links':links,
                 'catalog':{'total':c.execute('SELECT count(*) FROM links').fetchone()[0],
                            'visible':len(links),
@@ -374,7 +381,11 @@ class Handler(BaseHTTPRequestHandler):
             return self.reply(200, {'ok':True}, {'Set-Cookie':self.cookie_header('', clear=True)})
         if path == '/api/music' and method == 'POST':
             filename = text(unquote(self.headers.get('X-Filename', '')), '音频文件名', 255, True)
-            ext = Path(filename).suffix.lower()
+            # Client filenames are labels only, never paths on the server.
+            basename = Path(filename.replace('\\', '/')).name
+            ext = Path(basename).suffix.lower()
+            music_title = ''.join(ch for ch in Path(basename).stem
+                                  if not unicodedata.category(ch).startswith('C')).strip()[:100] or '背景音乐'
             if ext not in ('.mp3','.ogg','.wav','.m4a'):
                 raise APIError(400, '支持 MP3、OGG、WAV 和 M4A 音频')
             b = self.body(MAX_AUDIO, raw=True)
@@ -383,17 +394,33 @@ class Handler(BaseHTTPRequestHandler):
             valid = (ext == '.mp3' and (b.startswith(b'ID3') or (b[0]==255 and b[1]&224==224))) or (ext=='.ogg' and b.startswith(b'OggS')) or (ext=='.wav' and b.startswith(b'RIFF') and b[8:12]==b'WAVE') or (ext=='.m4a' and b[4:8]==b'ftyp')
             if not valid:
                 raise APIError(400, '文件内容与音频格式不匹配')
+            music_url = '/media/music' + ext + '?v=' + hashlib.sha256(b).hexdigest()[:16]
+            # Serialize upload defaults with other SQLite writes, reading settings only
+            # after the write lock so unrelated site/autoplay fields remain current.
+            c.execute('BEGIN IMMEDIATE')
+            old = json.loads(c.execute('SELECT data FROM settings').fetchone()[0])
+            old['musicUrl'] = music_url
+            old['musicTitle'] = music_title
             media = DATA / 'media'
+            if media.is_symlink():
+                raise APIError(400, '音频目录不能为符号链接')
             media.mkdir(exist_ok=True)
             tmp = media / ('.upload-'+secrets.token_hex(8))
-            tmp.write_bytes(b)
-            os.chmod(tmp,0o600)
-            tmp.replace(media / ('music'+ext))
-            old = json.loads(c.execute('SELECT data FROM settings').fetchone()[0])
-            old['musicUrl'] = '/media/music'+ext
-            c.execute('UPDATE settings SET data=? WHERE id=1', (json.dumps(old,ensure_ascii=False),))
-            c.commit()
-            return self.reply(200, {'musicUrl':old['musicUrl']})
+            created = False
+            try:
+                fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+                created = True
+                with os.fdopen(fd, 'wb') as stream:
+                    stream.write(b)
+                    stream.flush()
+                    os.fsync(stream.fileno())
+                os.replace(tmp, media / ('music'+ext))
+                c.execute('UPDATE settings SET data=? WHERE id=1', (json.dumps(old,ensure_ascii=False),))
+                c.commit()
+            finally:
+                if created:
+                    tmp.unlink(missing_ok=True)
+            return self.reply(200, {'musicUrl':music_url, 'musicTitle':music_title})
         if path == '/api/settings' and method == 'PUT':
             old = json.loads(c.execute('SELECT data FROM settings').fetchone()[0])
             new = settings_fields(self.body(), old)
@@ -437,7 +464,9 @@ class Handler(BaseHTTPRequestHandler):
                     if not isinstance(record,dict) or record.get('kind') not in ('category','link') or not catalog.valid_key(record.get('key')):
                         raise APIError(400,'目录历史格式不正确')
             old=json.loads(c.execute('SELECT data FROM settings').fetchone()[0])
-            newsettings=settings_fields(v.get('settings',{}),old)
+            # Imports restore the source backup's behavior: pre-autoplay backups
+            # default false, unlike legacy PUT requests which preserve live values.
+            newsettings=settings_fields(v.get('settings',{}),dict(old,musicAutoplay=False))
             # Transaction rolls back in handle_request if any entry fails validation.
             c.execute('DELETE FROM links');c.execute('DELETE FROM categories')
             if records is not None:

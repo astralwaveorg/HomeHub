@@ -2,7 +2,7 @@
 
 ## Scope and development contract
 
-This is an independent Git repository; the initial `main` baseline is `e264e7c`, tagged `v1.0.0`. Current source release is **1.1.0**. Work on branches, run checks, review the diff, then let the repository owner commit/merge. Never commit live data, `.env`, credentials, passwords, screenshots or backups. No remote repository, push, NAS deployment or password operation is performed by merely adding these scripts.
+This is an independent Git repository; the initial `main` baseline is `e264e7c`, tagged `v1.0.0`. Current source release is **1.1.1**. Work on branches, run checks, review the diff, then let the repository owner commit/merge. Never commit live data, `.env`, credentials, passwords, screenshots or backups. No remote repository, push, NAS deployment or password operation is performed by merely adding these scripts.
 
 From the repository root:
 
@@ -18,22 +18,21 @@ Python 3.12+ and Node.js are local/CI prerequisites; application runtime is stdl
 First the owner commits the reviewed changes (scripts do **not** commit). Then:
 
 ```sh
-python3 scripts/release.py package --output /tmp/homehub-release-1.1.0
-# Prints /tmp/homehub-release-1.1.0/homehub-1.1.0-<fullcommit>.tar.json
+python3 scripts/release.py package --output /tmp/homehub-release-1.1.1
+# Prints /tmp/homehub-release-1.1.1/homehub-1.1.1-<fullcommit>.tar.json
 python3 scripts/release.py deploy \
-  --manifest /tmp/homehub-release-1.1.0/homehub-1.1.0-<fullcommit>.tar.json \
+  --manifest /tmp/homehub-release-1.1.1/homehub-1.1.1-<fullcommit>.tar.json \
   --dry-run
 ```
 
-Replace `<fullcommit>` with the printed filename. Dry-run verifies local artifact integrity and prints scope; it does not connect, build or probe NAS. To apply the specifically approved one-time publication of existing **seed-managed** entries:
+Replace `<fullcommit>` with the printed filename. Dry-run verifies local artifact integrity and prints scope; it does not connect, build or probe NAS. Normal releases use the command below **without** any publication flag:
 
 ```sh
 python3 scripts/release.py deploy \
-  --manifest /tmp/homehub-release-1.1.0/homehub-1.1.0-<fullcommit>.tar.json \
-  --publish-existing
+  --manifest /tmp/homehub-release-1.1.1/homehub-1.1.1-<fullcommit>.tar.json
 ```
 
-**Later releases omit `--publish-existing`.** Their `sync-catalog` adds missing defaults and respects existing edits, visibility, names and catalog tombstones. The one-time option is an explicit content change, not a generic deployment default. Catalog migration must stay backward-compatible with retained older images. A code rollback does not undo a successful catalog change.
+**Normal releases omit `--publish-existing`.** The flag was used for the owner's approved one-time publication in 1.1.0; any later use needs fresh explicit approval. Their `sync-catalog` adds missing defaults and respects existing edits, visibility, names and catalog tombstones. The one-time option is an explicit content change, not a generic deployment default. Catalog migration must stay backward-compatible with retained older images. A code rollback does not undo a successful catalog change.
 
 Optional arguments: `--host root@10.0.1.2` (default), `--public-url https://homehub.stream:8443` (default). The public origin is checked from NAS, with normal certificate verification; DNS/hairpin routing must therefore work there. HTTP/IP addresses are not a replacement for production HTTPS health.
 
@@ -84,6 +83,12 @@ No GitHub remote/repository is created or pushed by this task. When the owner ch
 - Audit third-party Actions and consider pinning full reviewed action SHAs before enabling remote automation. Checkout credentials are not persisted; token permission is contents:read. No SSH action/plugin or registry credential is needed.
 
 The manual workflow checks/packages the clean checked-out commit outside the checkout and invokes the same client. GitHub concurrency and the NAS lock prevent overlapping scripted deployments. No separate deployment server or public NAS ingress is needed.
+
+## Music settings and older code rollback
+
+1.1.1 adds musicAutoplay and content-versioned upload URLs. A normal release preserves existing music settings; the owner-approved initial enablement is a separate settings change, not a repeated deployment default. Default music is managed in the admin UI, not by overwriting production data from seed.
+
+Manual code rollback to 1.1.0 retains all audio/data but that older player does not recognize a relative music URL with `?v=...`. If needed, remove only the query suffix from the music address in its admin settings; do not restore an old database merely to recover playback. Later 1.1.1-compatible code understands both legacy and versioned URLs.
 
 ## Test coverage and boundaries
 

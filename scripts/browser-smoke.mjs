@@ -18,6 +18,7 @@ import { createHash } from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 
 const help = `Usage: node scripts/browser-smoke.mjs --url <site-origin> [options]
 
@@ -129,12 +130,12 @@ class CDP {
       this.socket.send(JSON.stringify({ id, method, params }));
     });
   }
-  async evaluate(expression) {
+  async evaluate(expression, userGesture = false) {
     const result = await this.send("Runtime.evaluate", {
       expression,
       returnByValue: true,
       awaitPromise: true,
-      userGesture: true,
+      userGesture,
     });
     if (result.exceptionDetails)
       throw new Error(`Browser evaluation failed: ${JSON.stringify(result.exceptionDetails)}`);
@@ -167,7 +168,7 @@ async function connect(url) {
   return new CDP(socket);
 }
 
-async function startChrome(executable, profile, onChild) {
+async function startChrome(executable, profile, onChild, testOnlyArgs = []) {
   const child = spawn(executable, [
     "--headless=new",
     "--no-first-run",
@@ -179,6 +180,7 @@ async function startChrome(executable, profile, onChild) {
     "--window-size=1440,1000",
     "--remote-debugging-port=0",
     `--user-data-dir=${profile}`,
+    ...testOnlyArgs,
     "about:blank",
   ], { stdio: ["ignore", "ignore", "pipe"] });
   onChild(child);
@@ -255,7 +257,7 @@ async function main() {
     await page.send("Network.setCacheDisabled", { cacheDisabled: true });
     await browser.send("Browser.setDownloadBehavior", { behavior: "deny" });
     const evaluate = expression => page.evaluate(expression);
-    const click = selector => evaluate(`document.querySelector(${JSON.stringify(selector)}).click()`);
+    const click = selector => page.evaluate(`document.querySelector(${JSON.stringify(selector)}).click()`, true);
     const input = (selector, value) => evaluate(`(() => { const e=document.querySelector(${JSON.stringify(selector)});e.value=${JSON.stringify(value)};e.dispatchEvent(new Event('input',{bubbles:true})); })()`);
     const count = () => evaluate("document.querySelectorAll('#nav-results .service-card').length");
     const device = (width, height = 844, mobile = true) => page.send("Emulation.setDeviceMetricsOverride", { width, height, deviceScaleFactor: 1, mobile });
@@ -307,8 +309,14 @@ async function main() {
       return { url: asset.url, status: asset.status, fingerprint: version };
     });
     report.checks.push("JS/CSS network status and content-derived fingerprint");
-    const audioInitial = await evaluate("({paused:document.querySelector('#audio').paused,muted:document.querySelector('#audio').muted,source:document.querySelector('#audio').getAttribute('src')})");
-    assert.ok(audioInitial.paused && audioInitial.muted, "Audio initially paused and muted");
+    if (data.settings.musicAutoplay === true && data.settings.musicUrl)
+      await page.wait("!document.querySelector('#audio').paused || document.querySelector('#music-play').classList.contains('autoplay-blocked') || !!document.querySelector('#audio').error");
+    const audioInitial = await evaluate("({paused:document.querySelector('#audio').paused,muted:document.querySelector('#audio').muted,source:document.querySelector('#audio').getAttribute('src'),blocked:document.querySelector('#music-play').classList.contains('autoplay-blocked'),status:document.querySelector('#music-status').textContent})");
+    if (data.settings.musicAutoplay === true && audioInitial.source) {
+      assert.ok(!audioInitial.paused || audioInitial.blocked, "Configured autoplay starts or honestly exposes the browser-policy block");
+      if (audioInitial.blocked) assert.ok(audioInitial.status.includes('浏览器限制自动播放'));
+    } else assert.ok(audioInitial.paused, "Disabled/unconfigured autoplay remains paused");
+    report.audioInitial = audioInitial;
     await screenshot("portal-desktop");
     await navReset();
     assert.equal(await count(), data.links.length, "All public API links are rendered in navigation");
@@ -384,6 +392,7 @@ async function main() {
     }
     report.checks.push("390x844 and 360x844: three columns, >=12 complete cards above player, no overflow");
     if (audioInitial.source) {
+      if (await evaluate("!document.querySelector('#audio').paused")) await click("#music-play");
       await click("#music-play");
       await page.wait("!document.querySelector('#audio').paused && document.querySelector('#audio').currentTime>0.05");
       const before = await evaluate("document.querySelector('#audio').currentTime");
@@ -395,7 +404,7 @@ async function main() {
       await click("#music-play");
       assert.equal(await evaluate("document.querySelector('#audio').paused"), true);
       report.music = "PASS: user-initiated decoded playback, root/nav SPA continuity, pause";
-    } else report.music = "SKIP: no configured source; default paused/muted checked";
+    } else report.music = "SKIP: no configured source; paused state checked";
     await page.send("Emulation.setEmulatedMedia", { features: [{ name: "prefers-reduced-motion", value: "reduce" }] });
     assert.equal(await evaluate("getComputedStyle(document.querySelector('.aurora')).animationName"), "none");
     report.checks.push("reduced-motion disables aurora animation");
@@ -436,4 +445,7 @@ async function main() {
   }
 }
 
-main().catch(error => { console.error(error.message); process.exitCode = 1; });
+export { CDP, connect, chromePath, startChrome, stopChrome };
+
+if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url))
+  main().catch(error => { console.error(error.message); process.exitCode = 1; });

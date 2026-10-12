@@ -572,6 +572,10 @@ input:focus-visible {
   width: 34px;
   height: 34px;
 }
+.music-player .autoplay-blocked {
+  color: var(--gold);
+  box-shadow: 0 0 0 1px rgba(230, 199, 152, 0.55);
+}
 .page-heading {
   display: flex;
   align-items: center;
