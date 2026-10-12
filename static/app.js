@@ -190,6 +190,24 @@
       links: Array.isArray(data.links) ? data.links : [],
     };
     state.error = "";
+    if (data.authenticated && Array.isArray(data.favorites)) {
+      state.favorites = new Set(data.favorites.map(String));
+      store.set("favorites", [...state.favorites]);
+    } else if (!data.authenticated && !state.data) {
+      // First anonymous load keeps browser-local favorites.
+    }
+    const prefs = data.me?.prefs;
+    if (data.authenticated && prefs) {
+      if (Number.isFinite(prefs.volume)) {
+        audio.volume = Math.min(1, Math.max(0, Number(prefs.volume)));
+        $("#music-volume").value = String(audio.volume);
+        store.set("volume", audio.volume);
+      }
+      if (typeof prefs.muted === "boolean") {
+        audio.muted = prefs.muted;
+        store.set("muted", prefs.muted);
+      }
+    }
     document.title =
       (data.settings?.title || "Homehub") +
       " · " +
@@ -318,9 +336,25 @@
     ? Math.min(1, Math.max(0, volume))
     : 0.5;
   $("#music-volume").value = String(audio.volume);
+  let prefsTimer = null;
+  function savePrefs(part) {
+    if (!state.data?.authenticated) return;
+    clearTimeout(prefsTimer);
+    prefsTimer = setTimeout(() => {
+      api("/api/prefs", {
+        method: "PUT",
+        body: {
+          volume: Number(audio.volume.toFixed(2)),
+          muted: audio.muted,
+          ...part,
+        },
+      }).catch(() => {});
+    }, 400);
+  }
   $("#music-volume").addEventListener("input", (event) => {
     audio.volume = Number(event.target.value);
     store.set("volume", audio.volume);
+    savePrefs();
   });
   function visibility() {
     document.body.classList.toggle("tab-hidden", document.hidden);
@@ -433,12 +467,23 @@
     const favorite = button(
       state.favorites.has(String(link.id)) ? "★" : "☆",
       "favorite-button",
-      () => {
+      async () => {
         const id = String(link.id);
-        if (state.favorites.has(id)) state.favorites.delete(id);
-        else state.favorites.add(id);
+        const saved = !state.favorites.has(id);
+        if (state.data.authenticated) {
+          try {
+            await api("/api/favorites", {
+              method: "PUT",
+              body: { linkId: Number(link.id), on: saved },
+            });
+          } catch {
+            toast("收藏保存失败，请重试。");
+            return;
+          }
+        }
+        if (saved) state.favorites.add(id);
+        else state.favorites.delete(id);
         store.set("favorites", [...state.favorites]);
-        const saved = state.favorites.has(id);
         favorite.textContent = saved ? "★" : "☆";
         favorite.classList.toggle("saved", saved);
         favorite.setAttribute("aria-pressed", String(saved));
@@ -882,6 +927,7 @@
   $("#music-mute").addEventListener("click", () => {
     audio.muted = !audio.muted;
     store.set("muted", audio.muted);
+    savePrefs();
     updateMusic();
   });
   ["play", "pause", "volumechange", "error", "ended"].forEach((name) =>
@@ -1460,6 +1506,62 @@
     panel.append(form, uploadSection);
   }
   function adminAccount(panel) {
+    const me = state.data.me || { displayName: state.data.username || "" };
+    const profileSection = el("section", "settings-section");
+    profileSection.append(
+      el("h3", "", "个人资料与音乐偏好"),
+      el(
+        "p",
+        "hint",
+        `当前账户 ${me.username} · 显示名称和这里的音乐偏好只影响本账户；收藏同样按账户分开保存。`,
+      ),
+    );
+    const profileForm = el("form");
+    const profileGrid = el("div", "form-grid");
+    profileGrid.append(
+      field("显示名称", "displayName", me.displayName, "text", {
+        required: true,
+        maxLength: 40,
+      }),
+      field(
+        "背景音乐自动播放",
+        "musicAutoplay",
+        me.prefs?.musicAutoplay === true
+          ? "on"
+          : me.prefs?.musicAutoplay === false
+            ? "off"
+            : "site",
+        "select",
+        {
+          choices: [
+            { value: "site", label: "跟随站点设置" },
+            { value: "on", label: "始终自动播放" },
+            { value: "off", label: "始终不自动播放" },
+          ],
+        },
+      ),
+    );
+    const profileErr = el("p", "form-error");
+    profileErr.setAttribute("role", "alert");
+    const profileSubmit = button("保存个人设置", "button primary");
+    profileSubmit.type = "submit";
+    profileForm.append(profileGrid, profileErr, profileSubmit);
+    bindForm(profileForm, profileSubmit, async (data) => {
+      const mode = data.get("musicAutoplay");
+      await api("/api/profile", {
+        method: "PUT",
+        body: { displayName: String(data.get("displayName")).trim() },
+      });
+      await api("/api/prefs", {
+        method: "PUT",
+        body: {
+          musicAutoplay: mode === "on" ? true : mode === "off" ? false : null,
+        },
+      });
+      await refresh();
+      toast("个人设置已保存。");
+    });
+    profileSection.append(profileForm);
     const section = el("section", "settings-section");
     section.append(
       el("h3", "", "修改密码"),
@@ -1584,7 +1686,7 @@
       );
     });
     backup.append(importForm);
-    panel.append(section, backup);
+    panel.append(profileSection, section, backup);
   }
   load();
 })();

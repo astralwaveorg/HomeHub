@@ -152,7 +152,14 @@ def init():
         CREATE TABLE IF NOT EXISTS settings(id INTEGER PRIMARY KEY CHECK(id=1), data TEXT NOT NULL);
         CREATE TABLE IF NOT EXISTS admin(id INTEGER PRIMARY KEY CHECK(id=1), username TEXT NOT NULL, password TEXT NOT NULL);
         CREATE TABLE IF NOT EXISTS sessions(token_hash TEXT PRIMARY KEY, csrf TEXT NOT NULL, expires INTEGER NOT NULL);
+        CREATE TABLE IF NOT EXISTS accounts(id INTEGER PRIMARY KEY, username TEXT NOT NULL UNIQUE, password TEXT NOT NULL, display TEXT NOT NULL DEFAULT '');
+        CREATE TABLE IF NOT EXISTS favorites(account_id INTEGER NOT NULL REFERENCES accounts(id), link_id INTEGER NOT NULL REFERENCES links(id) ON DELETE CASCADE, PRIMARY KEY(account_id,link_id));
+        CREATE TABLE IF NOT EXISTS prefs(account_id INTEGER PRIMARY KEY REFERENCES accounts(id), music_autoplay INTEGER, volume REAL, muted INTEGER);
         ''')
+        try:
+            c.execute('ALTER TABLE sessions ADD COLUMN account_id INTEGER NOT NULL DEFAULT 0')
+        except sqlite3.OperationalError:
+            pass
         catalog.ensure_schema(c)
         if not c.execute('SELECT 1 FROM settings').fetchone():
             seed = json.loads((ROOT / 'seed.json').read_text())
@@ -191,6 +198,11 @@ def init():
                     os.fsync(f.fileno())
             c.execute('INSERT INTO admin VALUES(1,?,?)', ('astral', password_hash(password)))
             print('Administrator initialized; retrieve the password with the admin-password command.', flush=True)
+        # One-time migration of the single-admin row into the accounts model.
+        if not c.execute('SELECT 1 FROM accounts').fetchone():
+            a = c.execute('SELECT * FROM admin').fetchone()
+            if a:
+                c.execute('INSERT INTO accounts(id,username,password,display) VALUES(?,?,?,?)', (a['id'], a['username'], a['password'], ''))
         c.execute('DELETE FROM sessions WHERE expires < ?', (int(time.time()),))
     os.chmod(DB, 0o600)
 
@@ -258,7 +270,7 @@ class Handler(BaseHTTPRequestHandler):
         if not token or len(token)>200:
             return None
         digest = hashlib.sha256(token.encode()).hexdigest()
-        return c.execute('SELECT token_hash,csrf FROM sessions WHERE token_hash=? AND expires>?', (digest, int(time.time()))).fetchone()
+        return c.execute('SELECT s.token_hash,s.csrf,s.account_id,a.username,a.display FROM sessions s JOIN accounts a ON a.id=s.account_id WHERE s.token_hash=? AND s.expires>?', (digest, int(time.time()))).fetchone()
 
     def origin_check(self):
         origin = self.headers.get('Origin')
@@ -292,8 +304,19 @@ class Handler(BaseHTTPRequestHandler):
             categories = [x for x in categories if x['id'] in used]
         settings = json.loads(c.execute('SELECT data FROM settings').fetchone()[0])
         settings.setdefault('musicAutoplay', False)
+        me = None
+        if s:
+            p = c.execute('SELECT music_autoplay,volume,muted FROM prefs WHERE account_id=?', (s['account_id'],)).fetchone()
+            me = {'username': s['username'], 'displayName': s['display'] or s['username'],
+                  'prefs': {'musicAutoplay': None if not p or p['music_autoplay'] is None else bool(p['music_autoplay']),
+                            'volume': (p['volume'] if p and p['volume'] is not None else 0.5),
+                            'muted': bool(p['muted']) if p else False}}
+            if p and p['music_autoplay'] is not None:
+                settings['musicAutoplay'] = bool(p['music_autoplay'])
+        favorites = [r['link_id'] for r in c.execute('SELECT link_id FROM favorites WHERE account_id=?', (s['account_id'],))] if s else []
         return {'authenticated':bool(s), 'csrf':s['csrf'] if s else None,
-                'username':c.execute('SELECT username FROM admin').fetchone()[0] if s else None,
+                'username':me['displayName'] if me else None,
+                'me':me, 'favorites':favorites,
                 'settings':settings,
                 'categories':categories, 'links':links,
                 'catalog':{'total':c.execute('SELECT count(*) FROM links').fetchone()[0],
@@ -356,14 +379,14 @@ class Handler(BaseHTTPRequestHandler):
                 if count >= 10:
                     raise APIError(429, '尝试次数过多，请 15 分钟后再试')
                 ATTEMPTS[ip] = (start, count+1)
-                a = c.execute('SELECT * FROM admin').fetchone()
-                good = check_password(password, a['password'])
+                a = c.execute('SELECT * FROM accounts WHERE username=?', (username,)).fetchone()
+                good = a is not None and check_password(password, a['password'])
                 if not good or not hmac.compare_digest(username.encode('utf-8'), a['username'].encode('utf-8')):
                     raise APIError(401, '用户名或密码不正确')
                 ATTEMPTS.pop(ip, None)
             token, csrf = secrets.token_urlsafe(32), secrets.token_urlsafe(32)
             c.execute('DELETE FROM sessions WHERE expires < ?', (int(now),))
-            c.execute('INSERT INTO sessions VALUES(?,?,?)', (hashlib.sha256(token.encode()).hexdigest(), csrf, int(now)+SESSION_SECONDS))
+            c.execute('INSERT INTO sessions(token_hash,csrf,expires,account_id) VALUES(?,?,?,?)', (hashlib.sha256(token.encode()).hexdigest(), csrf, int(now)+SESSION_SECONDS, a['id']))
             c.commit()
             return self.reply(200, {'ok':True,'csrf':csrf,'username':a['username']}, {'Set-Cookie':self.cookie_header(token)})
         if path == '/api/export' and method == 'GET':
@@ -434,14 +457,56 @@ class Handler(BaseHTTPRequestHandler):
             if len(new)<12:
                 raise APIError(400,'新密码至少需要 12 个字符')
             with AUTH_LOCK:
-                a=c.execute('SELECT password FROM admin').fetchone()[0]
-                if not check_password(old,a):
+                a=c.execute('SELECT password FROM accounts WHERE id=?',(s['account_id'],)).fetchone()
+                if not check_password(old,a['password']):
                     raise APIError(400,'当前密码不正确')
-                c.execute('UPDATE admin SET password=? WHERE id=1',(password_hash(new),))
-                c.execute('DELETE FROM sessions WHERE token_hash<>?',(s['token_hash'],))
+                c.execute('UPDATE accounts SET password=? WHERE id=?',(password_hash(new),s['account_id']))
+                c.execute('DELETE FROM sessions WHERE account_id=? AND token_hash<>?',(s['account_id'],s['token_hash']))
                 c.commit()
-            (DATA/'initial-admin-password').unlink(missing_ok=True)
+            if s['account_id']==1:
+                (DATA/'initial-admin-password').unlink(missing_ok=True)
             return self.reply(200,{'ok':True})
+        if path == '/api/profile' and method == 'PUT':
+            v=self.body()
+            display=text(v.get('displayName',''),'显示名称',40)
+            c.execute('UPDATE accounts SET display=? WHERE id=?',(display,s['account_id']))
+            c.commit()
+            return self.reply(200,{'ok':True,'displayName':display or s['username']})
+        if path == '/api/favorites' and method == 'PUT':
+            v=self.body()
+            link_id=v.get('linkId');on=v.get('on')
+            if not isinstance(link_id,int) or not isinstance(on,bool):
+                raise APIError(400,'收藏参数格式不正确')
+            if not c.execute('SELECT 1 FROM links WHERE id=?',(link_id,)).fetchone():
+                raise APIError(404,'入口不存在')
+            if on:
+                c.execute('INSERT OR IGNORE INTO favorites(account_id,link_id) VALUES(?,?)',(s['account_id'],link_id))
+            else:
+                c.execute('DELETE FROM favorites WHERE account_id=? AND link_id=?',(s['account_id'],link_id))
+            c.commit()
+            return self.reply(200,{'ok':True,'on':on})
+        if path == '/api/prefs' and method == 'PUT':
+            v=self.body()
+            p=c.execute('SELECT music_autoplay,volume,muted FROM prefs WHERE account_id=?',(s['account_id'],)).fetchone()
+            cur=[None if not p or p['music_autoplay'] is None else bool(p['music_autoplay']),
+                 float(p['volume']) if p and p['volume'] is not None else 0.5,
+                 bool(p['muted']) if p else False]
+            if 'musicAutoplay' in v:
+                ma=v['musicAutoplay']
+                if ma is not None and not isinstance(ma,bool):raise APIError(400,'自动播放偏好格式不正确')
+                cur[0]=ma
+            if 'volume' in v:
+                vol=v['volume']
+                if not isinstance(vol,(int,float)) or not 0<=vol<=1:raise APIError(400,'音量格式不正确')
+                cur[1]=float(vol)
+            if 'muted' in v:
+                if not isinstance(v['muted'],bool):raise APIError(400,'静音偏好格式不正确')
+                cur[2]=v['muted']
+            c.execute('INSERT INTO prefs(account_id,music_autoplay,volume,muted) VALUES(?,?,?,?) '+
+                      'ON CONFLICT(account_id) DO UPDATE SET music_autoplay=excluded.music_autoplay,volume=excluded.volume,muted=excluded.muted',
+                      (s['account_id'],None if cur[0] is None else int(cur[0]),cur[1],int(cur[2])))
+            c.commit()
+            return self.reply(200,{'ok':True,'prefs':{'musicAutoplay':cur[0],'volume':cur[1],'muted':cur[2]}})
         if path == '/api/import' and method == 'POST':
             v=self.body(MAX_BACKUP)
             cats, links=v.get('categories'),v.get('links')
@@ -468,7 +533,7 @@ class Handler(BaseHTTPRequestHandler):
             # default false, unlike legacy PUT requests which preserve live values.
             newsettings=settings_fields(v.get('settings',{}),dict(old,musicAutoplay=False))
             # Transaction rolls back in handle_request if any entry fails validation.
-            c.execute('DELETE FROM links');c.execute('DELETE FROM categories')
+            c.execute('DELETE FROM links');c.execute('DELETE FROM categories');c.execute('DELETE FROM favorites')
             if records is not None:
                 c.execute('DELETE FROM catalog_registry')
                 for record in records:catalog.remember(c,record['kind'],record['key'])
@@ -598,9 +663,25 @@ if __name__=='__main__':
     elif cmd=='reset-password':
         password=secrets.token_urlsafe(18)
         with db() as c:
-            c.execute('UPDATE admin SET password=? WHERE id=1',(password_hash(password),));c.execute('DELETE FROM sessions');c.commit()
+            c.execute('UPDATE accounts SET password=? WHERE id=1',(password_hash(password),))
+            c.execute('DELETE FROM sessions WHERE account_id=1');c.commit()
         p=DATA/'initial-admin-password';p.write_text(password+'\n');os.chmod(p,0o600)
         print('管理员 astral 的新密码：'+password)
+    elif cmd=='add-account':
+        try:
+            username,password=sys.argv[2],sys.argv[3]
+        except IndexError:
+            raise SystemExit('Usage: app.py add-account USERNAME PASSWORD')
+        if not re.fullmatch(r'[A-Za-z0-9_.-]{2,40}',username):
+            raise SystemExit('用户名仅限 2-40 位字母、数字、点、下划线、连字符')
+        if not 8<=len(password)<=256:
+            raise SystemExit('密码至少 8 位')
+        with db() as c:
+            if c.execute('SELECT 1 FROM accounts WHERE username=?',(username,)).fetchone():
+                raise SystemExit('用户名已存在')
+            c.execute('INSERT INTO accounts(username,password,display) VALUES(?,?,?)',(username,password_hash(password),''))
+            c.commit()
+        print(f'账户 {username} 已创建，权限与管理员一致。')
     elif cmd=='serve':
         print('Homehub listening on :8080',flush=True)
         Server((os.environ.get('HOMEHUB_BIND','0.0.0.0'),int(os.environ.get('HOMEHUB_PORT','8080'))),Handler).serve_forever()
