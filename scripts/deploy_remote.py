@@ -19,7 +19,7 @@ import urllib.request
 import uuid
 
 ROOT = Path('/vol1/1000/docker/homehub')
-RUNTIME = {'app.py', 'catalog.py', 'seed.json', 'ambient.wav', 'Dockerfile', 'compose.yaml', 'VERSION', '.dockerignore', 'README.md', 'CHANGELOG.md'}
+RUNTIME = {'app.py', 'catalog.py', 'icon_library.py', 'seed.json', 'ambient.wav', 'Dockerfile', 'compose.yaml', 'VERSION', '.dockerignore', 'README.md', 'CHANGELOG.md'}
 
 
 def safe(path):

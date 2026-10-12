@@ -19,6 +19,7 @@ from contextlib import contextmanager
 from http.cookies import SimpleCookie
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import unquote, urlsplit
+import icon_library
 import catalog
 
 ROOT = Path(__file__).resolve().parent
@@ -140,6 +141,20 @@ def imported_key(value):
         raise APIError(400, '备份目录标识格式不正确')
     return value
 
+ICON_NAME = icon_library.NAME
+
+def icon_library_dir(create=False):
+    return icon_library.library_dir(DATA, create)
+
+def save_icon_bytes(b):
+    return icon_library.store_image(DATA, b)
+
+def fetch_remote_icon(target):
+    return icon_library.fetch_remote(target)
+
+def resolve_icon(value, missing_ok=False):
+    return icon_library.resolve_reference(value, DATA, STATIC, missing_ok)
+
 
 def init():
     DATA.mkdir(parents=True, exist_ok=True)
@@ -160,6 +175,8 @@ def init():
             c.execute('ALTER TABLE sessions ADD COLUMN account_id INTEGER NOT NULL DEFAULT 0')
         except sqlite3.OperationalError:
             pass
+        if 'icon_url' not in {r[1] for r in c.execute('PRAGMA table_info(links)')}:
+            c.execute("ALTER TABLE links ADD COLUMN icon_url TEXT NOT NULL DEFAULT ''")
         catalog.ensure_schema(c)
         if not c.execute('SELECT 1 FROM settings').fetchone():
             seed = json.loads((ROOT / 'seed.json').read_text())
@@ -223,7 +240,7 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header('X-Frame-Options', 'DENY')
         self.send_header('Referrer-Policy', 'no-referrer')
         self.send_header('Permissions-Policy', 'camera=(), microphone=(), geolocation=()')
-        self.send_header('Content-Security-Policy', "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self'; media-src 'self' https:; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'")
+        self.send_header('Content-Security-Policy', icon_library.SVG_CSP if content_type=='image/svg+xml' else "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self'; media-src 'self' https:; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'")
 
     def reply(self, status, data, headers=None):
         body = json.dumps(data, ensure_ascii=False).encode()
@@ -298,6 +315,7 @@ class Handler(BaseHTTPRequestHandler):
         links = [dict(r) for r in c.execute(query)]
         for item in links:
             item['pinned'] = bool(item['pinned'])
+            item['iconUrl'] = resolve_icon(item.get('icon_url') or '', missing_ok=True)
         categories = [dict(r) for r in c.execute('SELECT * FROM categories ORDER BY rank,id')]
         if not s:
             used = {x['category_id'] for x in links}
@@ -349,6 +367,12 @@ class Handler(BaseHTTPRequestHandler):
         except APIError as e:
             self.close_connection = True
             self.reply(e.status, {'error':e.message}, {'Connection':'close'})
+        except icon_library.IconBusy as e:
+            self.close_connection = True
+            self.reply(429, {'error':str(e)}, {'Connection':'close'})
+        except icon_library.IconError as e:
+            self.close_connection = True
+            self.reply(400, {'error':str(e)}, {'Connection':'close'})
         except (BrokenPipeError, ConnectionResetError, TimeoutError):
             self.close_connection = True
         except Exception as e:
@@ -360,6 +384,9 @@ class Handler(BaseHTTPRequestHandler):
         method = self.command
         if path in ('/api/data','/api/me') and method in ('GET','HEAD'):
             return self.reply(200, self.data(c))
+        if path == '/api/icons' and method == 'GET':
+            self.require_auth(c)
+            return self.reply(200, {'library':icon_library.list_icons(DATA)})
         if path == '/api/health' and method in ('GET','HEAD'):
             c.execute('SELECT 1')
             return self.reply(200, {'ok':True, 'version':VERSION})
@@ -444,6 +471,24 @@ class Handler(BaseHTTPRequestHandler):
                 if created:
                     tmp.unlink(missing_ok=True)
             return self.reply(200, {'musicUrl':music_url, 'musicTitle':music_title})
+        if path == '/api/icons' and method == 'POST':
+            with icon_library.operation():
+                # Authentication and Origin/CSRF validation occurred before reading bytes.
+                ctype=self.headers.get('Content-Type','').lower()
+                if ctype.startswith('application/json'):
+                    target=self.body().get('url')
+                    b=fetch_remote_icon(target)
+                else:
+                    filename=text(unquote(self.headers.get('X-Filename','')),'图标文件名',255,True)
+                    ext=Path(filename.replace('\\','/')).suffix.lower()
+                    if ext not in icon_library.MIME:
+                        raise APIError(400,'仅支持 PNG、JPG、WebP、SVG、ICO 图标')
+                    b=self.body(icon_library.MAX_BYTES,raw=True)
+                    actual=icon_library.validate_image(b)
+                    if actual != ('.jpg' if ext=='.jpeg' else ext):
+                        raise APIError(400,'图标文件内容与扩展名不一致')
+                name=save_icon_bytes(b)
+                return self.reply(200,{'ok':True,'icon':name,'url':'/media/icons/'+name})
         if path == '/api/settings' and method == 'PUT':
             old = json.loads(c.execute('SELECT data FROM settings').fetchone()[0])
             new = settings_fields(self.body(), old)
@@ -540,7 +585,7 @@ class Handler(BaseHTTPRequestHandler):
             for cat in clean_cats:
                 c.execute('INSERT INTO categories(id,name,rank,catalog_key) VALUES(?,?,?,?)',tuple(cat.values()))
                 if cat['catalog_key']:catalog.remember(c,'category',cat['catalog_key'])
-            link_keys=set()
+            link_keys=set(); missing_icons=[]
             for item in links:
                 if not isinstance(item,dict):raise APIError(400,'备份入口格式不正确')
                 clean=link_fields(item,c)
@@ -548,11 +593,15 @@ class Handler(BaseHTTPRequestHandler):
                 if key is not None and key in link_keys:
                     raise APIError(400,'备份入口目录标识重复')
                 clean['catalog_key']=key
+                reference=item.get('iconUrl', item.get('icon_url', ''))
+                clean['icon_url']=resolve_icon(reference,missing_ok=True)
+                if reference and not clean['icon_url']:
+                    missing_icons.append(item.get('id',item.get('name','')))
                 if key is not None:
                     link_keys.add(key);catalog.remember(c,'link',key)
                 c.execute('INSERT INTO links('+','.join(clean)+') VALUES('+','.join('?' for _ in clean)+')',tuple(clean.values()))
             c.execute('UPDATE settings SET data=? WHERE id=1',(json.dumps(newsettings,ensure_ascii=False),));c.commit()
-            return self.reply(200,{'ok':True})
+            return self.reply(200,{'ok':True,'missingIcons':missing_icons})
         m=re.fullmatch(r'/api/(links|categories)(?:/(\d+))?',path)
         if not m:
             raise APIError(404,'接口不存在')
@@ -564,6 +613,8 @@ class Handler(BaseHTTPRequestHandler):
             v=self.body()
             clean=link_fields(v,c) if table=='links' else category_fields(v)
             cur=c.execute(f'INSERT INTO {table}('+','.join(clean)+') VALUES('+','.join('?' for _ in clean)+')',tuple(clean.values()))
+            if table=='links' and 'iconUrl' in v:
+                c.execute('UPDATE links SET icon_url=? WHERE id=?',(resolve_icon(v['iconUrl']),cur.lastrowid))
             c.commit();return self.reply(201,{'ok':True,'id':cur.lastrowid})
         if ident is None or not c.execute(f'SELECT 1 FROM {table} WHERE id=?',(int(ident),)).fetchone():
             raise APIError(404,'入口或分类不存在')
@@ -573,6 +624,8 @@ class Handler(BaseHTTPRequestHandler):
                 v['launch_mode']=c.execute('SELECT launch_mode FROM links WHERE id=?',(int(ident),)).fetchone()[0]
             clean=link_fields(v,c) if table=='links' else category_fields(v)
             c.execute(f'UPDATE {table} SET '+','.join(k+'=?' for k in clean)+' WHERE id=?',(*clean.values(),int(ident)))
+            if table=='links' and 'iconUrl' in v:
+                c.execute('UPDATE links SET icon_url=? WHERE id=?',(resolve_icon(v['iconUrl']),int(ident)))
         elif method=='DELETE':
             if table=='categories' and c.execute('SELECT 1 FROM links WHERE category_id=?',(int(ident),)).fetchone():
                 raise APIError(409,'分类内仍有入口，请先移动或删除这些入口')
@@ -591,6 +644,12 @@ class Handler(BaseHTTPRequestHandler):
             if not p.is_relative_to(STATIC.resolve()):
                 raise APIError(404,'文件不存在')
             content_type=mimetypes.guess_type(p)[0] or 'application/octet-stream'
+        elif re.fullmatch(r'/media/icons/[A-Za-z0-9_-]+\.(png|jpe?g|webp|svg|ico)',path):
+            try:
+                p=icon_library.safe_file(icon_library_dir(),path.rsplit('/',1)[1])
+            except icon_library.IconError:
+                raise APIError(404,'文件不存在')
+            content_type=icon_library.MIME[p.suffix]
         elif re.fullmatch(r'/media/music\.(mp3|ogg|wav|m4a|opus)',path):
             p=DATA/path.lstrip('/')
             content_type={'.mp3':'audio/mpeg','.ogg':'audio/ogg','.wav':'audio/wav','.m4a':'audio/mp4','.opus':'audio/ogg'}[p.suffix]

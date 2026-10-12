@@ -13,7 +13,7 @@ import tarfile
 
 ROOT = Path(__file__).resolve().parents[1]
 SSH = ['ssh', '-o', 'BatchMode=yes', '-o', 'StrictHostKeyChecking=yes', '-o', 'ConnectTimeout=10']
-RUNTIME = {'app.py', 'catalog.py', 'seed.json', 'ambient.wav', 'Dockerfile', 'compose.yaml', 'VERSION', '.dockerignore', 'README.md', 'CHANGELOG.md'}
+RUNTIME = {'app.py', 'catalog.py', 'icon_library.py', 'seed.json', 'ambient.wav', 'Dockerfile', 'compose.yaml', 'VERSION', '.dockerignore', 'README.md', 'CHANGELOG.md'}
 
 
 def allowed(name):

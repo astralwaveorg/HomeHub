@@ -297,15 +297,15 @@ async function main() {
     assert.ok(await evaluate("document.querySelector('[data-route=\"/\"]').textContent.includes('晨昏') && document.querySelector('[data-route=\"/nav\"]').textContent.includes('星图')"));
     report.checks.push("public API/catalog accounting, exact heading, root logo and explicit navigation");
     const assets = await evaluate(`(async()=>{
-      const nodes=[document.querySelector('script[src]'),document.querySelector('link[rel=stylesheet]')];
+      const nodes=[document.querySelector('script[src^="/assets/app.js"]'),document.querySelector('link[rel=stylesheet]'),document.querySelector('script[src^="/assets/icons.js"]')];
       return Promise.all(nodes.map(async node=>{const url=node.src||node.href;const r=await fetch(url);return {url,status:r.status,text:await r.text()}}));
     })()`);
-    const fingerprint = createHash("sha256").update(assets[0].text).update(assets[1].text).digest("hex");
+    const fingerprint = createHash("sha256").update(assets[0].text).update(assets[1].text).update(assets[2].text).digest("hex");
     report.assets = assets.map(asset => {
       assert.equal(asset.status, 200);
       const version = new URL(asset.url).searchParams.get("v");
       assert.match(version || "", /^[a-f\d]{8,64}$/i, "Asset URL contains a real content fingerprint, not an unexpanded placeholder");
-      assert.equal(version, fingerprint.slice(0, version.length), "Asset query fingerprint matches app.js + styles.css content");
+      assert.equal(version, fingerprint.slice(0, version.length), "Asset query fingerprint matches app.js + styles.css + icons.js content");
       return { url: asset.url, status: asset.status, fingerprint: version };
     });
     report.checks.push("JS/CSS network status and content-derived fingerprint");
@@ -320,7 +320,7 @@ async function main() {
     await screenshot("portal-desktop");
     await navReset();
     assert.equal(await count(), data.links.length, "All public API links are rendered in navigation");
-    const domNames = await evaluate("[...document.querySelectorAll('#nav-results .service-name')].map(e=>e.textContent).sort()");
+    const domNames = await evaluate("[...document.querySelectorAll('#nav-results .service-name-text')].map(e=>e.textContent).sort()");
     assert.deepEqual(domNames, data.links.map(link => link.name).sort(), "Catalog names are neither missing nor duplicated");
     assert.ok(await evaluate("[...document.querySelectorAll('.service-link')].every(a=>a.target==='_blank'&&a.rel.split(/\\s+/).includes('noopener'))"));
     const categoryName = id => data.categories.find(category => String(category.id) === String(id))?.name || "未分类";
@@ -328,7 +328,7 @@ async function main() {
       const query = link.name.toLocaleLowerCase();
       const expected = data.links.filter(item => [item.name, item.description, item.aliases, categoryName(item.category_id)].join(" ").toLocaleLowerCase().includes(query)).map(item => item.name).sort();
       await input("#service-search", link.name);
-      const found = await evaluate("[...document.querySelectorAll('#nav-results .service-name')].map(e=>e.textContent).sort()");
+      const found = await evaluate("[...document.querySelectorAll('#nav-results .service-name-text')].map(e=>e.textContent).sort()");
       assert.deepEqual(found, expected, `Search coverage: ${link.name}`);
     }
     await input("#service-search", "__HOMEHUB_NO_SUCH_SERVICE_7391__");
@@ -360,7 +360,7 @@ async function main() {
     for (const link of fnos) {
       const desktopRoot = new URL(link.url).origin + "/";
       const result = await evaluate(`(() => {
-        const a=[...document.querySelectorAll('.service-link')].find(a=>a.querySelector('.service-name').textContent===${JSON.stringify(link.name)});
+        const a=[...document.querySelectorAll('.service-link')].find(a=>a.querySelector('.service-name-text').textContent===${JSON.stringify(link.name)});
         const href=a.href;a.focus();a.click();const desktop=document.querySelector('#dialog-body a');
         return {href,open:document.querySelector('#editor').open,instructions:document.querySelector('#dialog-body').textContent,desktop:desktop?.href,target:desktop?.target,rel:desktop?.rel};
       })()`);
@@ -370,7 +370,7 @@ async function main() {
       assert.equal(result.target, "_blank");
       assert.ok(result.rel.split(/\s+/).includes("noopener"));
       await click("#dialog-close");
-      assert.equal(await evaluate("document.activeElement.querySelector('.service-name')?.textContent"), link.name, "Closing fnOS instructions restores focus to its card");
+      assert.equal(await evaluate("document.activeElement.querySelector('.service-name-text')?.textContent"), link.name, "Closing fnOS instructions restores focus to its card");
     }
     report.fnosLaunchers = fnos.length;
     report.checks.push("fnOS launch interception, instructions, safe desktop-root links and modal focus restoration");

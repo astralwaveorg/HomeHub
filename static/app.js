@@ -374,27 +374,42 @@
   });
   function emblem(link, index = 0) {
     const node = el("span", "emblem");
-    const official = window.HOMEHUB_ICONS?.[link.catalog_key];
-    if (official) {
+    node.setAttribute("aria-hidden", "true");
+    const fallback = () => {
+      const icon = String(link.icon || "").trim();
+      node.classList.remove("emblem-official");
+      node.textContent =
+        symbols[icon.toLowerCase()] ||
+        (icon && !/^(https?:|data:|<|\/)/i.test(icon)
+          ? [...icon].slice(0, 2).join("")
+          : [...String(link.name || "H")][0]);
+      const tone = tones[index % tones.length];
+      node.style.setProperty("--emblem-color", tone[0]);
+      node.style.setProperty("--emblem-bg", tone[1]);
+    };
+    const official = localIconSource(
+      window.HOMEHUB_ICONS?.[link.catalog_key]?.src,
+    );
+    const custom = localIconSource(link.iconUrl);
+    const display = (src, recovery = "") => {
       const img = el("img", "emblem-image");
-      img.src = official.src;
       img.alt = "";
       img.loading = "lazy";
       img.decoding = "async";
-      node.append(img);
+      img.addEventListener(
+        "error",
+        () => {
+          if (recovery && recovery !== src) display(recovery);
+          else fallback();
+        },
+        { once: true },
+      );
+      img.src = src;
+      node.replaceChildren(img);
       node.classList.add("emblem-official");
-      return node;
-    }
-    const icon = String(link.icon || "").trim();
-    node.textContent =
-      symbols[icon.toLowerCase()] ||
-      (icon && !/^(https?:|data:|<|\/)/i.test(icon)
-        ? [...icon].slice(0, 2).join("")
-        : [...String(link.name || "H")][0]);
-    const tone = tones[index % tones.length];
-    node.style.setProperty("--emblem-color", tone[0]);
-    node.style.setProperty("--emblem-bg", tone[1]);
-    node.setAttribute("aria-hidden", "true");
+    };
+    if (custom || official) display(custom || official, custom ? official : "");
+    else fallback();
     return node;
   }
   function serviceCard(link, index) {
@@ -1099,10 +1114,19 @@
     else adminLinks(panel);
   }
   async function mutate(path, method, body, success) {
-    await api(path, { method, ...(body !== undefined ? { body } : {}) });
+    const result = await api(path, {
+      method,
+      ...(body !== undefined ? { body } : {}),
+    });
     await refresh();
     if (dialog.open) dialog.close();
-    toast(success);
+    toast(
+      path === "/api/import" &&
+        Array.isArray(result.missingIcons) &&
+        result.missingIcons.length > 0
+        ? `${success}；${result.missingIcons.length} 个图标文件缺失，已回退默认。`
+        : success,
+    );
   }
   function adminLinks(panel) {
     const toolbar = el("div", "admin-toolbar");
@@ -1155,6 +1179,244 @@
         el("p", "hint", "建议先在「分类管理」中创建一个分类，再添加服务。"),
       );
   }
+  function localIconSource(value) {
+    return typeof value === "string" &&
+      /^\/(assets|media)\/icons\/[A-Za-z0-9_-][A-Za-z0-9_.-]{0,127}\.(png|jpe?g|webp|svg|ico)$/.test(
+        value,
+      )
+      ? value
+      : "";
+  }
+  function buildIconEditor(link = null) {
+    const section = el("section", "icon-editor full");
+    section.id = "icon-editor";
+    section.setAttribute("aria-label", "服务图标");
+    const heading = el("div", "icon-editor-heading");
+    const preview = el("div", "icon-preview");
+    preview.id = "icon-preview";
+    const details = el("div");
+    details.append(
+      el("strong", "", "服务图标"),
+      el(
+        "p",
+        "hint",
+        "上传、抓取远程图片，或复用图标库。保存服务才会应用。图标可公开访问，请勿上传敏感图片。",
+      ),
+    );
+    heading.append(preview, details);
+    const pathField = field(
+      "已选图标 · 站内路径",
+      "iconUrl",
+      link?.iconUrl || "",
+      "text",
+      {
+        full: true,
+        maxLength: 180,
+        placeholder: "留空使用默认图标",
+        hint: "支持 /assets/icons/… 或 /media/icons/…；不支持 NAS 系统绝对路径。",
+      },
+    );
+    const pathInput = $("input", pathField);
+    pathInput.id = "icon-local-path";
+    pathInput.autocomplete = "off";
+    const fallback = field(
+      "备用字符图标",
+      "icon",
+      link?.icon || "globe",
+      "text",
+      {
+        maxLength: 40,
+        hint: "无默认图片时显示；可填写 emoji 或 cloud、film、music、folder 等名称。",
+      },
+    );
+    const fallbackInput = $("input", fallback);
+    const status = el("p", "icon-status");
+    status.id = "icon-status";
+    status.setAttribute("role", "status");
+    status.setAttribute("aria-live", "polite");
+    const libraryField = el("label", "field");
+    libraryField.append(el("span", "", "选择图标库"));
+    const library = el("select");
+    library.id = "icon-library";
+    library.append(new Option("默认 · 官方图标 / 备用字符", ""));
+    const builtinGroup = el("optgroup");
+    builtinGroup.label = "内置官方图标";
+    const names = new Map(
+      state.data.links
+        .filter((l) => l.catalog_key)
+        .map((l) => [l.catalog_key, l.name]),
+    );
+    Object.entries(window.HOMEHUB_ICONS || {}).forEach(([key, item]) => {
+      if (localIconSource(item.src))
+        builtinGroup.append(new Option(names.get(key) || key, item.src));
+    });
+    library.append(builtinGroup);
+    const uploadedGroup = el("optgroup");
+    uploadedGroup.label = "已上传 / 已抓取";
+    library.append(uploadedGroup);
+    libraryField.append(library);
+    const addLibraryOption = (src, label) => {
+      if (!Array.from(library.options).some((o) => o.value === src))
+        uploadedGroup.append(new Option(label || src.split("/").pop(), src));
+    };
+    const refreshPreview = () => {
+      const value = pathInput.value.trim();
+      const draft = {
+        ...(link || {}),
+        icon: fallbackInput.value || "globe",
+        iconUrl: localIconSource(value),
+      };
+      preview.replaceChildren(emblem(draft));
+      preview.title = value ? "自定义图标预览" : "默认图标预览";
+      library.value = value;
+    };
+    const choose = (src) => {
+      status.classList.remove("is-error");
+      pathInput.value = src;
+      if (src) addLibraryOption(src);
+      refreshPreview();
+    };
+    if (pathInput.value) addLibraryOption(pathInput.value, "当前自定义图标");
+    library.addEventListener("change", () => {
+      choose(library.value);
+      status.textContent = "预览已更新，保存服务后生效。";
+    });
+    pathInput.addEventListener("input", refreshPreview);
+    fallbackInput.addEventListener("input", refreshPreview);
+    const fileField = el("label", "field full");
+    fileField.append(el("span", "", "上传图片"));
+    const file = el("input");
+    file.id = "icon-file";
+    file.type = "file";
+    file.accept = ".png,.jpg,.jpeg,.webp,.svg,.ico";
+    fileField.append(
+      file,
+      el(
+        "small",
+        "hint",
+        "PNG / JPG / WebP / SVG / ICO，最大 1 MiB。建议使用 64px 以上透明图片。",
+      ),
+    );
+    const remoteField = el("label", "field full");
+    remoteField.append(el("span", "", "远程图片 URL"));
+    const remoteRow = el("div", "icon-url-row");
+    const remote = el("input");
+    remote.id = "icon-remote-url";
+    remote.type = "text";
+    remote.inputMode = "url";
+    remote.autocomplete = "off";
+    remote.placeholder = "https://example.com/favicon.ico";
+    remote.maxLength = 2048;
+    const fetchButton = button("抓取到本站", "button");
+    fetchButton.id = "icon-fetch";
+    remoteRow.append(remote, fetchButton);
+    remoteField.append(
+      remoteRow,
+      el(
+        "small",
+        "hint",
+        "保存为本地副本，不热链外站；需为无需登录即可访问的图片地址。",
+      ),
+    );
+    const reset = button("恢复默认图标", "button small", () => {
+      choose("");
+      status.textContent = "已恢复默认预览，保存服务后生效。";
+    });
+    reset.id = "icon-reset";
+    let busy = false;
+    const controls = [file, remote, fetchButton, library, pathInput, reset];
+    const upload = async (options) => {
+      if (busy) return;
+      busy = true;
+      section.dataset.busy = "true";
+      controls.forEach((node) => {
+        node.disabled = true;
+      });
+      const submit = section
+        .closest("form")
+        ?.querySelector('button[type="submit"]');
+      if (submit) submit.disabled = true;
+      status.classList.remove("is-error");
+      status.textContent = "正在校验并保存图标…";
+      try {
+        const result = await api("/api/icons", { method: "POST", ...options });
+        const src = localIconSource(result.url);
+        if (!src) throw new Error("服务器返回了无效的图标路径。");
+        choose(src);
+        status.textContent =
+          "图标已存入图标库；保存服务后应用，取消则不改变当前服务。";
+      } catch (error) {
+        status.classList.add("is-error");
+        status.textContent = error.message;
+      } finally {
+        busy = false;
+        section.dataset.busy = "false";
+        controls.forEach((node) => {
+          node.disabled = false;
+        });
+        if (submit) submit.disabled = false;
+        file.value = "";
+      }
+    };
+    file.addEventListener("change", () => {
+      const selected = file.files?.[0];
+      if (!selected) return;
+      if (!selected.size || selected.size > 1024 * 1024) {
+        status.classList.add("is-error");
+        status.textContent = "请选择不超过 1 MiB 的图片文件。";
+        file.value = "";
+        return;
+      }
+      upload({
+        body: selected,
+        headers: {
+          "Content-Type": selected.type || "application/octet-stream",
+          "X-Filename": encodeURIComponent(selected.name),
+        },
+      });
+    });
+    fetchButton.addEventListener("click", () => {
+      const target = safeUrl(remote.value.trim());
+      if (!target) {
+        status.classList.add("is-error");
+        status.textContent = "请填写完整的 http:// 或 https:// 图片地址。";
+        return;
+      }
+      upload({ body: { url: target } });
+    });
+    remote.addEventListener("keydown", (event) => {
+      if (event.key === "Enter") {
+        event.preventDefault();
+        fetchButton.click();
+      }
+    });
+    section.append(
+      heading,
+      fileField,
+      remoteField,
+      libraryField,
+      fallback,
+      pathField,
+      reset,
+      status,
+    );
+    refreshPreview();
+    api("/api/icons")
+      .then((result) => {
+        (result.library || []).forEach((name) => {
+          const src = localIconSource(`/media/icons/${name}`);
+          if (src) addLibraryOption(src);
+        });
+        library.value = pathInput.value.trim();
+      })
+      .catch((error) => {
+        if (!busy && !status.textContent) {
+          status.classList.add("is-error");
+          status.textContent = `图标库加载失败：${error.message}，仍可上传或恢复默认。`;
+        }
+      });
+    return section;
+  }
   function editLink(link = null) {
     const form = el("form");
     const grid = el("div", "form-grid");
@@ -1200,10 +1462,7 @@
         full: true,
         maxLength: 200,
       }),
-      field("图标", "icon", link?.icon || "globe", "text", {
-        hint: "可填写 emoji 或名称：cloud、server、film、music、folder、code、photo、shield。",
-        maxLength: 40,
-      }),
+      buildIconEditor(link),
       field("可见性", "visibility", link?.visibility || "private", "select", {
         choices: [
           { value: "public", label: "公开 · 所有人可见" },
@@ -1250,6 +1509,7 @@
         url,
         description: String(data.get("description")).trim(),
         icon: String(data.get("icon")).trim(),
+        iconUrl: String(data.get("iconUrl") || "").trim(),
         visibility: data.get("visibility"),
         launch_mode: data.get("launch_mode"),
         pinned: data.has("pinned"),
@@ -1611,7 +1871,7 @@
       el(
         "p",
         "hint",
-        "导出完整 JSON 备份。导入会替换全部分类与服务，请先保存现有备份。",
+        "JSON 备份包含分类、服务、设置和图标引用，不包含图片或音乐文件。导入会替换全部分类与服务，请先保存现有备份。",
       ),
     );
     const exportButton = button("↓ 导出 JSON 备份", "button", async () => {
