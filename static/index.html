@@ -62,10 +62,13 @@
       <span class="music-art" aria-hidden="true">♫</span>
       <div class="music-info">
         <span id="music-title">晚风电台</span
-        ><span id="music-status">音乐默认暂停 · 点击播放</span>
+        ><span id="music-status" role="status" aria-live="polite"
+          >正在加载背景音乐设置…</span
+        >
       </div>
       <button
         id="music-play"
+        aria-describedby="music-status"
         class="icon-button"
         aria-label="播放音乐"
         type="button"
@@ -74,8 +77,8 @@
       ><button
         id="music-mute"
         class="icon-button"
-        aria-label="取消静音"
-        aria-pressed="true"
+        aria-label="静音"
+        aria-pressed="false"
         type="button"
       >
         ♬̸</button
@@ -89,7 +92,7 @@
         value="0.5"
         aria-label="音乐音量"
         title="音乐音量"
-      /><audio id="audio" preload="none" muted loop></audio>
+      /><audio id="audio" preload="none" loop></audio>
     </aside>
     <dialog id="editor" aria-labelledby="dialog-title">
       <div class="dialog-top">

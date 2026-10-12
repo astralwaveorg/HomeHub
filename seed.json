@@ -4,7 +4,8 @@
     "tagline": "天空沒有極限",
     "subtitle": "安放热爱，也通向远方。这里是我的数字居所。",
     "musicUrl": "/media/music.wav",
-    "musicTitle": "无界 · 原创氛围音"
+    "musicTitle": "无界 · 原创氛围音",
+    "musicAutoplay": true
   },
   "categories": [
     {

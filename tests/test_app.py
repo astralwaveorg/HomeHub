@@ -1,6 +1,7 @@
 """Run locally: python3 -m unittest discover -s homehub/tests -v.
 All credentials and database files are generated only in a temporary directory.
 """
+import hashlib
 import http.client
 import importlib.util
 import json
@@ -10,6 +11,7 @@ from pathlib import Path
 import tempfile
 import threading
 import unittest
+from urllib.parse import quote
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
@@ -160,11 +162,65 @@ class AppTests(unittest.TestCase):
         self.assertEqual(h['Cache-Control'],'no-cache')
         self.assertEqual(self.request('GET','/api/health')[1]['version'],self.app.VERSION)
 
+    def test_037_autoplay_settings_and_legacy_import(self):
+        cookie,csrf=self.login()
+        _,original,_=self.request('GET','/api/export',cookie=cookie)
+        try:
+            self.assertEqual(self.request('PUT','/api/settings',{'musicAutoplay':True},cookie,csrf)[0],200)
+            self.assertIs(self.request('GET','/api/data')[1]['settings']['musicAutoplay'],True)
+            # An older client only knows site text: do not turn enabled autoplay off.
+            self.assertEqual(self.request('PUT','/api/settings',{'subtitle':'Legacy client edit'},cookie,csrf)[0],200)
+            self.assertIs(self.request('GET','/api/data')[1]['settings']['musicAutoplay'],True)
+            for invalid in ('true','false',1,0,None,[],{}):
+                with self.subTest(invalid=invalid):
+                    before=self.request('GET','/api/data')[1]['settings']
+                    self.assertEqual(self.request('PUT','/api/settings',{'musicAutoplay':invalid},cookie,csrf)[0],400)
+                    self.assertEqual(self.request('GET','/api/data')[1]['settings'],before)
+            self.assertEqual(self.request('PUT','/api/settings',{'musicAutoplay':False},cookie,csrf)[0],200)
+            self.assertIs(self.request('GET','/api/data')[1]['settings']['musicAutoplay'],False)
+            self.assertEqual(self.request('PUT','/api/settings',{'musicAutoplay':True},cookie,csrf)[0],200)
+            _,backup,_=self.request('GET','/api/export',cookie=cookie)
+            self.assertIs(backup['settings']['musicAutoplay'],True)
+            invalid=json.loads(json.dumps(backup));invalid['settings']['musicAutoplay']='true'
+            self.assertEqual(self.request('POST','/api/import',invalid,cookie,csrf)[0],400)
+            self.assertEqual(self.request('GET','/api/export',cookie=cookie)[1],backup)
+            backup['settings'].pop('musicAutoplay')
+            self.assertEqual(self.request('POST','/api/import',backup,cookie,csrf)[0],200)
+            self.assertIs(self.request('GET','/api/data')[1]['settings']['musicAutoplay'],False)
+            # Legacy rows expose false without a write during a public read.
+            with self.app.db() as c:
+                legacy=json.loads(c.execute('SELECT data FROM settings').fetchone()[0])
+                legacy.pop('musicAutoplay',None)
+                c.execute('UPDATE settings SET data=? WHERE id=1',(json.dumps(legacy),))
+            self.assertIs(self.request('GET','/api/data')[1]['settings']['musicAutoplay'],False)
+            with self.app.db() as c:
+                self.assertNotIn('musicAutoplay',json.loads(c.execute('SELECT data FROM settings').fetchone()[0]))
+            self.assertEqual(self.request('PUT','/api/settings',{'subtitle':'Older row edit'},cookie,csrf)[0],200)
+            self.assertIs(self.request('GET','/api/data')[1]['settings']['musicAutoplay'],False)
+        finally:
+            self.assertEqual(self.request('POST','/api/import',original,cookie,csrf)[0],200)
+
+    def test_038_local_music_url_validation(self):
+        cookie,csrf=self.login()
+        original=self.request('GET','/api/data')[1]['settings']
+        try:
+            for valid in ('/media/music.mp3','/media/music.ogg?v=0123456789abcdef','/media/music.wav?v=aaaaaaaaaaaaaaaa','/media/music.m4a'):
+                with self.subTest(valid=valid):
+                    self.assertEqual(self.request('PUT','/api/settings',{'musicUrl':valid},cookie,csrf)[0],200)
+            for invalid in ('/media/other.mp3','/media/music.mp3?v=short','/media/music.mp3?v=0123456789abcdef&x=1','/media/music.mp3?x=0123456789abcdef','/media/music.mp3?v=0123456789abcdef#x','/media/../homehub.db','//evil.example/music.mp3'):
+                with self.subTest(invalid=invalid):
+                    self.assertEqual(self.request('PUT','/api/settings',{'musicUrl':invalid},cookie,csrf)[0],400)
+        finally:
+            self.assertEqual(self.request('PUT','/api/settings',original,cookie,csrf)[0],200)
+
     def test_04_music_and_range(self):
         cookie,csrf=self.login()
         audio=b'ID3'+b'\x00'*100
         status,d,_=self.request('POST','/api/music',audio,cookie,csrf,headers={'X-Filename':'sample.mp3','Content-Type':'audio/mpeg'},raw=True)
         self.assertEqual(status,200,d)
+        self.assertEqual(d['musicUrl'],'/media/music.mp3?v='+hashlib.sha256(audio).hexdigest()[:16])
+        self.assertEqual(d['musicTitle'],'sample')
+        self.assertEqual(self.request('GET','/media/music.mp3')[0],200)
         status,b,h=self.request('GET',d['musicUrl'],headers={'Range':'bytes=0-15'})
         self.assertEqual(status,206)
         self.assertEqual(len(b),16)
@@ -173,6 +229,74 @@ class AppTests(unittest.TestCase):
         self.assertEqual(self.request('GET','/assets/../seed.json')[0],404)
         self.assertEqual(self.request('GET','/assets/%2e%2e/app.py')[0],404)
         self.assertEqual(self.request('GET','/media/../homehub.db')[0],404)
+
+    def test_041_music_upload_sets_default_and_preserves_settings(self):
+        cookie,csrf=self.login()
+        original=self.request('GET','/api/data')[1]['settings']
+        try:
+            self.assertEqual(self.request('PUT','/api/settings',{'title':'Custom site','subtitle':'Keep subtitle','tagline':'Keep tagline','musicAutoplay':True},cookie,csrf)[0],200)
+            before=self.request('GET','/api/data')[1]['settings']
+            audio=b'ID3'+b'first audio fixture'*8
+            headers={'X-Filename':quote('C:\\fakepath\\银河\x00夜曲.mp3'),'Content-Type':'audio/mpeg'}
+            status,uploaded,_=self.request('POST','/api/music',audio,cookie,csrf,headers=headers,raw=True)
+            self.assertEqual(status,200,uploaded)
+            self.assertEqual(uploaded['musicTitle'],'银河夜曲')
+            self.assertEqual(uploaded['musicUrl'],'/media/music.mp3?v='+hashlib.sha256(audio).hexdigest()[:16])
+            settings=self.request('GET','/api/data')[1]['settings']
+            self.assertEqual(settings,dict(before,musicUrl=uploaded['musicUrl'],musicTitle='银河夜曲'))
+            self.assertEqual((Path(self.temp.name)/'media/music.mp3').read_bytes(),audio)
+            self.assertEqual((Path(self.temp.name)/'media/music.mp3').stat().st_mode&0o777,0o600)
+            repeat=self.request('POST','/api/music',audio,cookie,csrf,headers=headers,raw=True)[1]
+            self.assertEqual(repeat['musicUrl'],uploaded['musicUrl'])
+            changed=self.request('POST','/api/music',audio+b'new',cookie,csrf,headers=headers,raw=True)[1]
+            self.assertNotEqual(changed['musicUrl'],uploaded['musicUrl'])
+            long_headers={'X-Filename':quote('../'+'曲'*120+'.MP3')}
+            status,long_title,_=self.request('POST','/api/music',audio,cookie,csrf,headers=long_headers,raw=True)
+            self.assertEqual(status,200)
+            self.assertEqual(long_title['musicTitle'],'曲'*100)
+            self.assertEqual(long_title['musicUrl'],uploaded['musicUrl'])
+            self.assertEqual(list((Path(self.temp.name)/'media').glob('.upload-*')),[])
+        finally:
+            self.assertEqual(self.request('PUT','/api/settings',original,cookie,csrf)[0],200)
+
+    def test_042_music_rejections_do_not_write(self):
+        cookie,csrf=self.login()
+        fixture=b'ID3'+b'prior valid audio'*8
+        self.assertEqual(self.request('POST','/api/music',fixture,cookie,csrf,headers={'X-Filename':'prior.mp3'},raw=True)[0],200)
+        path=Path(self.temp.name)/'media/music.mp3'
+        before_file=path.read_bytes()
+        before_settings=self.request('GET','/api/data')[1]['settings']
+        audio=b'ID3'+b'not written'*10
+        cases=[
+            (401,None,None,{'X-Filename':'good.mp3'},audio),
+            (403,cookie,None,{'X-Filename':'good.mp3'},audio),
+            (400,cookie,csrf,{'X-Filename':'bad.exe'},audio),
+            (400,cookie,csrf,{'X-Filename':'bad.mp3'},b'<html>not audio</html>'),
+            (400,cookie,csrf,{'X-Filename':'small.mp3'},b'ID3'),
+            (413,cookie,csrf,{'X-Filename':'big.mp3','Content-Length':str(self.app.MAX_AUDIO+1)},b''),
+        ]
+        for expected,auth,token,headers,payload in cases:
+            with self.subTest(expected=expected,headers=headers):
+                self.assertEqual(self.request('POST','/api/music',payload,auth,token,headers=headers,raw=True)[0],expected)
+                self.assertEqual(path.read_bytes(),before_file)
+                self.assertEqual(self.request('GET','/api/data')[1]['settings'],before_settings)
+        self.assertEqual(list((Path(self.temp.name)/'media').glob('.upload-*')),[])
+
+    def test_043_supported_music_formats(self):
+        cookie,csrf=self.login()
+        original=self.request('GET','/api/data')[1]['settings']
+        try:
+            samples={'mp3':b'ID3'+b'0'*20,'ogg':b'OggS'+b'0'*20,
+                     'wav':b'RIFF0000WAVE'+b'0'*20,'m4a':b'0000ftyp'+b'0'*20}
+            for ext,audio in samples.items():
+                with self.subTest(ext=ext):
+                    status,d,_=self.request('POST','/api/music',audio,cookie,csrf,headers={'X-Filename':'track.'+ext},raw=True)
+                    self.assertEqual(status,200,d)
+                    self.assertEqual(d['musicUrl'],f'/media/music.{ext}?v='+hashlib.sha256(audio).hexdigest()[:16])
+                    self.assertEqual(d['musicTitle'],'track')
+                    self.assertEqual(self.request('GET',d['musicUrl'])[1],audio)
+        finally:
+            self.assertEqual(self.request('PUT','/api/settings',original,cookie,csrf)[0],200)
 
     def test_045_bootstrap_recovery(self):
         old_data,old_db=self.app.DATA,self.app.DB
