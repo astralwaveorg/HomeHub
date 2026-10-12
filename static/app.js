@@ -414,13 +414,13 @@
     if (link.visibility === "private" && state.data.authenticated)
       badges.push("◇ 私密");
     if (fnosLaunch) badges.push("飞牛启动");
-    else if (
-      url &&
-      /^(10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.|127\.)/.test(
-        new URL(url).hostname,
-      )
-    )
-      badges.push("仅内网");
+    else if (url) {
+      const host = new URL(url).hostname;
+      if (/^10\.0\./.test(host) || /^192\.168\./.test(host)) badges.push("内");
+      else if (/^(?:\d{1,3}\.){3}\d{1,3}$/.test(host) || host.includes(":"))
+        badges.push("IP");
+      else badges.push("公");
+    }
     if (badges.length)
       card.append(el("span", "private-badge", badges.join(" · ")));
     return card;
