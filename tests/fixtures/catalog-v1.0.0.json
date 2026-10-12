@@ -1,0 +1,345 @@
+{
+  "settings": {
+    "title": "Homehub",
+    "tagline": "天空，没有边界。",
+    "subtitle": "安放热爱，也通向远方。这里是我的数字居所。",
+    "musicUrl": "/media/music.wav",
+    "musicTitle": "无界 · 原创氛围音"
+  },
+  "categories": [
+    {
+      "id": 1,
+      "name": "影音与阅读",
+      "rank": 10
+    },
+    {
+      "id": 2,
+      "name": "音乐与创作",
+      "rank": 20
+    },
+    {
+      "id": 3,
+      "name": "文件与收藏",
+      "rank": 30
+    },
+    {
+      "id": 4,
+      "name": "生活空间",
+      "rank": 40
+    },
+    {
+      "id": 5,
+      "name": "下载与做种",
+      "rank": 50
+    },
+    {
+      "id": 6,
+      "name": "系统管理",
+      "rank": 60
+    },
+    {
+      "id": 7,
+      "name": "家庭应用",
+      "rank": 70
+    }
+  ],
+  "links": [
+    {
+      "category_id": 1,
+      "name": "有声书",
+      "url": "https://books.homehub.stream:8443/",
+      "description": "有声书与播客，慢慢听世界",
+      "icon": "headphones",
+      "pinned": true,
+      "visibility": "public",
+      "rank": 10,
+      "aliases": "audiobookshelf abs 播客 阅读"
+    },
+    {
+      "category_id": 1,
+      "name": "Emby",
+      "url": "https://emby.homehub.stream:8443/",
+      "description": "我的电影与剧集",
+      "icon": "film",
+      "pinned": true,
+      "visibility": "public",
+      "rank": 20,
+      "aliases": "影视 电影 剧集"
+    },
+    {
+      "category_id": 1,
+      "name": "飞牛影视",
+      "url": "https://tv.homehub.stream:8443/",
+      "description": "飞牛媒体库与播放",
+      "icon": "tv",
+      "pinned": false,
+      "visibility": "public",
+      "rank": 30,
+      "aliases": "fnos 影视"
+    },
+    {
+      "category_id": 2,
+      "name": "音乐",
+      "url": "https://music.homehub.stream:8443/",
+      "description": "Navidrome · 私人音乐收藏",
+      "icon": "music",
+      "pinned": true,
+      "visibility": "public",
+      "rank": 40,
+      "aliases": "navidrome 音乐 听歌"
+    },
+    {
+      "category_id": 2,
+      "name": "音乐标签",
+      "url": "https://mtag.homehub.stream:8443/",
+      "description": "Music Tag Web · 封面与标签整理",
+      "icon": "tag",
+      "pinned": false,
+      "visibility": "private",
+      "rank": 50,
+      "aliases": "music tag 标签 封面"
+    },
+    {
+      "category_id": 2,
+      "name": "代码仓库",
+      "url": "https://git.homehub.stream:8443/",
+      "description": "Gitea · 创作与版本管理",
+      "icon": "code",
+      "pinned": false,
+      "visibility": "private",
+      "rank": 60,
+      "aliases": "gitea git 代码"
+    },
+    {
+      "category_id": 3,
+      "name": "文件空间",
+      "url": "https://alist.homehub.stream:8443/",
+      "description": "OpenList · 文件与网盘",
+      "icon": "folder",
+      "pinned": true,
+      "visibility": "public",
+      "rank": 70,
+      "aliases": "openlist alist 网盘 文件"
+    },
+    {
+      "category_id": 3,
+      "name": "WebDAV",
+      "url": "https://dav.homehub.stream:8443/",
+      "description": "文件同步与远程挂载",
+      "icon": "cloud",
+      "pinned": false,
+      "visibility": "private",
+      "rank": 80,
+      "aliases": "webdav 同步"
+    },
+    {
+      "category_id": 3,
+      "name": "对象存储",
+      "url": "https://storage.homehub.stream:8443/",
+      "description": "MinIO · 存储控制台",
+      "icon": "database",
+      "pinned": false,
+      "visibility": "private",
+      "rank": 90,
+      "aliases": "minio 对象 存储"
+    },
+    {
+      "category_id": 3,
+      "name": "影像",
+      "url": "https://pic.homehub.stream:8443/",
+      "description": "我的图片空间",
+      "icon": "image",
+      "pinned": false,
+      "visibility": "private",
+      "rank": 100,
+      "aliases": "图片 照片 photo"
+    },
+    {
+      "category_id": 4,
+      "name": "情侣小站",
+      "url": "https://love.homehub.stream:8443/",
+      "description": "两个人的专属空间",
+      "icon": "heart",
+      "pinned": true,
+      "visibility": "private",
+      "rank": 110,
+      "aliases": "lovespace 情侣 爱 生活"
+    },
+    {
+      "category_id": 5,
+      "name": "订阅下载",
+      "url": "https://down.homehub.stream:8443/",
+      "description": "qBittorrent · 订阅与手动下载",
+      "icon": "download",
+      "pinned": true,
+      "visibility": "private",
+      "rank": 120,
+      "aliases": "qb-sub qb qbit 订阅 下载"
+    },
+    {
+      "category_id": 5,
+      "name": "刷流下载",
+      "url": "https://flux.homehub.stream:8443/",
+      "description": "qBittorrent · 刷流与分享率",
+      "icon": "activity",
+      "pinned": false,
+      "visibility": "private",
+      "rank": 130,
+      "aliases": "qb-flux qb qbit 刷流"
+    },
+    {
+      "category_id": 5,
+      "name": "长期保种",
+      "url": "https://seed.homehub.stream:8443/",
+      "description": "Transmission · 保种与 H&R",
+      "icon": "seed",
+      "pinned": false,
+      "visibility": "private",
+      "rank": 140,
+      "aliases": "tr-seed transmission 保种"
+    },
+    {
+      "category_id": 5,
+      "name": "Vertex",
+      "url": "https://vt.homehub.stream:8443/",
+      "description": "PT 下载与做种管理",
+      "icon": "layers",
+      "pinned": false,
+      "visibility": "private",
+      "rank": 150,
+      "aliases": "vertex pt 下载 保种"
+    },
+    {
+      "category_id": 5,
+      "name": "MoviePilot",
+      "url": "https://mp.homehub.stream:8443/",
+      "description": "订阅、下载与媒体入库",
+      "icon": "clapperboard",
+      "pinned": true,
+      "visibility": "private",
+      "rank": 160,
+      "aliases": "moviepilot mp 订阅 影视"
+    },
+    {
+      "category_id": 6,
+      "name": "1Panel",
+      "url": "https://panel.homehub.stream:8443/astralwave",
+      "description": "容器、反代与证书管理",
+      "icon": "server",
+      "pinned": true,
+      "visibility": "private",
+      "rank": 170,
+      "aliases": "1panel docker 容器 面板 管理"
+    },
+    {
+      "category_id": 6,
+      "name": "飞牛 NAS",
+      "url": "https://fn.homehub.stream:8443/",
+      "description": "家庭存储与应用中心",
+      "icon": "hard-drive",
+      "pinned": true,
+      "visibility": "private",
+      "rank": 180,
+      "aliases": "fnos 飞牛 nas 系统"
+    },
+    {
+      "category_id": 6,
+      "name": "家庭网络",
+      "url": "https://owrt.homehub.stream:8443/",
+      "description": "ImmortalWrt · 路由器管理",
+      "icon": "wifi",
+      "pinned": false,
+      "visibility": "private",
+      "rank": 190,
+      "aliases": "openwrt immortalwrt 路由 网络"
+    },
+    {
+      "category_id": 6,
+      "name": "动态解析",
+      "url": "https://ddns.homehub.stream:8443/",
+      "description": "ddns-go · 域名地址更新",
+      "icon": "globe",
+      "pinned": false,
+      "visibility": "private",
+      "rank": 200,
+      "aliases": "ddns-go dns 域名 动态"
+    },
+    {
+      "category_id": 6,
+      "name": "密码库",
+      "url": "https://vault.homehub.stream:8443/",
+      "description": "Vaultwarden · 私人密码管理",
+      "icon": "shield",
+      "pinned": true,
+      "visibility": "private",
+      "rank": 210,
+      "aliases": "vaultwarden bitwarden 密码 安全"
+    },
+    {
+      "category_id": 2,
+      "name": "Beets",
+      "url": "http://10.0.1.2:48002/",
+      "description": "音乐批量整理 · 仅内网",
+      "icon": "music",
+      "pinned": false,
+      "visibility": "private",
+      "rank": 220,
+      "aliases": "beets 音乐 整理"
+    },
+    {
+      "category_id": 4,
+      "name": "音箱投送",
+      "url": "http://10.0.1.2:48320/",
+      "description": "miair-next · 仅内网",
+      "icon": "radio",
+      "pinned": false,
+      "visibility": "private",
+      "rank": 230,
+      "aliases": "miair 小米 音箱 投送"
+    },
+    {
+      "category_id": 1,
+      "name": "Jellyfin",
+      "url": "http://10.0.1.2:8097/",
+      "description": "另一套媒体服务 · 仅内网",
+      "icon": "film",
+      "pinned": false,
+      "visibility": "private",
+      "rank": 240,
+      "aliases": "jellyfin 媒体"
+    },
+    {
+      "category_id": 7,
+      "name": "AMMDS",
+      "url": "http://10.0.1.2:49523/",
+      "description": "家庭媒体应用 · 仅内网",
+      "icon": "layers",
+      "pinned": false,
+      "visibility": "private",
+      "rank": 250,
+      "aliases": "ammds 媒体"
+    },
+    {
+      "category_id": 7,
+      "name": "指尖 NAS",
+      "url": "http://10.0.1.2:5366/",
+      "description": "移动端管理 · 仅内网",
+      "icon": "smartphone",
+      "pinned": false,
+      "visibility": "private",
+      "rank": 260,
+      "aliases": "handnas 指尖 nas"
+    },
+    {
+      "category_id": 7,
+      "name": "通知管理",
+      "url": "http://10.0.1.2:18230/",
+      "description": "FnMessageBot · 仅内网",
+      "icon": "bell",
+      "pinned": false,
+      "visibility": "private",
+      "rank": 270,
+      "aliases": "fnmessagebot 推送 通知"
+    }
+  ]
+}

@@ -1,17 +1,110 @@
 <!doctype html>
 <html lang="zh-CN">
-<head>
-<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="theme-color" content="#101124"><meta name="description" content="Homehub · 连接你的数字生活，天空没有边界。">
-<title>Homehub · 天空，没有边界。</title>
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 40 40'%3E%3Crect width='40' height='40' rx='12' fill='%231b1934'/%3E%3Cpath d='M9 27V13h5v5h12v-5h5v14h-5v-5H14v5' fill='%23e6c798'/%3E%3C/svg%3E">
-<link rel="stylesheet" href="/assets/styles.css"><script src="/assets/app.js" defer></script>
-</head>
-<body>
-<div class="sky" aria-hidden="true"><div class="aurora aurora-one"></div><div class="aurora aurora-two"></div><div class="stars"></div><div class="horizon"></div></div>
-<a class="skip-link" href="#main">跳至主要内容</a>
-<header class="header"><a href="/" class="brand" aria-label="Homehub 返回门户"><span class="brand-mark" aria-hidden="true">h<span>·</span></span><span>homehub<span class="brand-dot">.</span></span></a><nav class="primary-nav" aria-label="主导航"><a href="/" data-route="/">门户</a><a href="/nav" data-route="/nav">全部服务</a><a href="/admin" data-route="/admin">管理</a></nav><button id="quiet" class="icon-button quiet-button" type="button" aria-pressed="false" title="静谧模式：关闭背景动画">◌<span class="quiet-label">静谧</span></button></header>
-<main id="main" tabindex="-1"><div class="loading-state" role="status"><span class="loading-orbit"></span>正在连接你的数字世界…</div></main>
-<footer class="footer"><span>HOMEHUB <span class="footer-divider">/</span> YOUR DIGITAL HORIZON</span><span id="footer-status">属于你的每一个日常</span></footer>
-<aside class="music-player" aria-label="背景音乐播放器"><span class="music-art" aria-hidden="true">♫</span><div class="music-info"><span id="music-title">晚风电台</span><span id="music-status">音乐默认暂停 · 点击播放</span></div><button id="music-play" class="icon-button" aria-label="播放音乐" type="button">▷</button><button id="music-mute" class="icon-button" aria-label="取消静音" aria-pressed="true" type="button">♬̸</button><input id="music-volume" class="music-volume" type="range" min="0" max="1" step="0.05" value="0.5" aria-label="音乐音量" title="音乐音量"><audio id="audio" preload="none" muted loop></audio></aside>
-<dialog id="editor" aria-labelledby="dialog-title"><div class="dialog-top"><h2 id="dialog-title"></h2><button type="button" class="icon-button" id="dialog-close" aria-label="关闭对话框">×</button></div><div id="dialog-body"></div></dialog><div id="toast" class="toast" role="status" aria-live="polite"></div>
-</body></html>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#101124" />
+    <meta
+      name="description"
+      content="Homehub · 连接你的数字生活，天空没有边界。"
+    />
+    <title>Homehub · 天空沒有極限</title>
+    <link
+      rel="icon"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 40 40'%3E%3Crect width='40' height='40' rx='12' fill='%231b1934'/%3E%3Cpath d='M9 27V13h5v5h12v-5h5v14h-5v-5H14v5' fill='%23e6c798'/%3E%3C/svg%3E"
+    />
+    <link
+      rel="stylesheet"
+      href="/assets/styles.css?v=__HOMEHUB_ASSET_VERSION__"
+    />
+    <script src="/assets/app.js?v=__HOMEHUB_ASSET_VERSION__" defer></script>
+  </head>
+  <body>
+    <div class="sky" aria-hidden="true">
+      <div class="aurora aurora-one"></div>
+      <div class="aurora aurora-two"></div>
+      <div class="stars"></div>
+      <div class="horizon"></div>
+    </div>
+    <a class="skip-link" href="#main">跳至主要内容</a>
+    <header class="header">
+      <a href="/" class="brand" aria-label="Homehub 返回门户"
+        ><span class="brand-mark" aria-hidden="true">h<span>·</span></span
+        ><span>homehub<span class="brand-dot">.</span></span></a
+      >
+      <nav class="primary-nav" aria-label="主导航">
+        <a href="/" data-route="/">门户</a
+        ><a href="/nav" data-route="/nav">全部服务</a
+        ><a href="/admin" data-route="/admin">管理</a>
+      </nav>
+      <button
+        id="quiet"
+        class="icon-button quiet-button"
+        type="button"
+        aria-pressed="false"
+        title="静谧模式：关闭背景动画"
+      >
+        ◌<span class="quiet-label">静谧</span>
+      </button>
+    </header>
+    <main id="main" tabindex="-1">
+      <div class="loading-state" role="status">
+        <span class="loading-orbit"></span>正在连接你的数字世界…
+      </div>
+    </main>
+    <footer class="footer">
+      <span
+        >HOMEHUB <span class="footer-divider">/</span> YOUR DIGITAL
+        HORIZON</span
+      ><span id="footer-status">属于你的每一个日常</span>
+    </footer>
+    <aside class="music-player" aria-label="背景音乐播放器">
+      <span class="music-art" aria-hidden="true">♫</span>
+      <div class="music-info">
+        <span id="music-title">晚风电台</span
+        ><span id="music-status">音乐默认暂停 · 点击播放</span>
+      </div>
+      <button
+        id="music-play"
+        class="icon-button"
+        aria-label="播放音乐"
+        type="button"
+      >
+        ▷</button
+      ><button
+        id="music-mute"
+        class="icon-button"
+        aria-label="取消静音"
+        aria-pressed="true"
+        type="button"
+      >
+        ♬̸</button
+      ><input
+        id="music-volume"
+        class="music-volume"
+        type="range"
+        min="0"
+        max="1"
+        step="0.05"
+        value="0.5"
+        aria-label="音乐音量"
+        title="音乐音量"
+      /><audio id="audio" preload="none" muted loop></audio>
+    </aside>
+    <dialog id="editor" aria-labelledby="dialog-title">
+      <div class="dialog-top">
+        <h2 id="dialog-title"></h2>
+        <button
+          type="button"
+          class="icon-button"
+          id="dialog-close"
+          aria-label="关闭对话框"
+        >
+          ×
+        </button>
+      </div>
+      <div id="dialog-body"></div>
+    </dialog>
+    <div id="toast" class="toast" role="status" aria-live="polite"></div>
+  </body>
+</html>

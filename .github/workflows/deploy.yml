@@ -1,0 +1,40 @@
+name: Deploy Homehub (opt-in)
+on:
+  workflow_dispatch:
+    inputs:
+      publish_existing:
+        description: 'Approved one-time publication of existing default entries (usually false)'
+        type: boolean
+        default: false
+permissions:
+  contents: read
+concurrency:
+  group: homehub-production
+  cancel-in-progress: false
+jobs:
+  deploy:
+    # Disabled until the owner explicitly enables this repository variable.
+    if: vars.HOMEHUB_DEPLOY_ENABLED == 'true' && github.ref == 'refs/heads/main'
+    environment: homehub-production
+    runs-on: [self-hosted, homehub-deploy]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          clean: true
+      - name: Check and package committed source
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/release.py package --output "$RUNNER_TEMP/homehub-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
+      - name: Deploy over existing private network
+        shell: bash
+        env:
+          HOMEHUB_SSH_HOST: ${{ vars.HOMEHUB_SSH_HOST }}
+          PUBLISH_EXISTING: ${{ inputs.publish_existing }}
+        run: |
+          set -euo pipefail
+          files=("$RUNNER_TEMP/homehub-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT/"*.tar.json)
+          args=()
+          if [[ "$PUBLISH_EXISTING" == true ]]; then args+=(--publish-existing); fi
+          python3 scripts/release.py deploy --host "${HOMEHUB_SSH_HOST:-root@10.0.1.2}" --manifest "${files[0]}" "${args[@]}"

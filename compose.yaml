@@ -1,9 +1,10 @@
 name: homehub
 services:
   homehub:
-    image: homehub-portal:1.0.0
+    image: ${HOMEHUB_IMAGE:-homehub-portal:1.1.0}
     build: .
     container_name: homehub
+    user: "1000:1000"
     restart: unless-stopped
     ports:
       - "127.0.0.1:48080:8080"
