@@ -451,12 +451,43 @@ async function main() {
       });
       await evaluate("window.scrollTo(0,0)");
       const geometry = await evaluate(
-        `(()=>{const cards=[...document.querySelectorAll('#nav-results .service-card')];const overflow=cards.filter(c=>{const badge=c.querySelector('.addr-badge'),name=c.querySelector('.service-name');if(!badge)return false;const b=badge.getBoundingClientRect(),n=name.getBoundingClientRect();return b.right>n.right+1||b.left<n.left-1});const brand=document.querySelector('.brand').getBoundingClientRect(),nav=document.querySelector('.primary-nav').getBoundingClientRect(),actions=document.querySelector('.header-actions').getBoundingClientRect();return {width:innerWidth,overflow:document.documentElement.scrollWidth>innerWidth,badgeOverflow:overflow.length,headerOverlap:brand.right>nav.left+1||nav.right>actions.left+1,columns:getComputedStyle(document.querySelector('#nav-results')).gridTemplateColumns.trim().split(/\\s+/).length}})()`,
+        `(()=>{const cards=[...document.querySelectorAll('#nav-results .service-card')];const overflow=cards.filter(c=>{const badge=c.querySelector('.addr-badge'),name=c.querySelector('.service-name');if(!badge)return false;const b=badge.getBoundingClientRect(),n=name.getBoundingClientRect();return b.right>n.right+1||b.left<n.left-1});const brand=document.querySelector('.brand').getBoundingClientRect(),nav=document.querySelector('.primary-nav').getBoundingClientRect(),actions=document.querySelector('.header-actions').getBoundingClientRect();const bar=document.querySelector('.filter-bar'),cats=bar.querySelector('.categories:not(.addr-filter)'),addr=bar.querySelector('.addr-filter'),views=bar.querySelector('.view-controls');const cR=cats.getBoundingClientRect(),aR=addr.getBoundingClientRect(),vR=views.getBoundingClientRect();const heading=document.querySelector('#main .page-heading').getBoundingClientRect();return {width:innerWidth,overflow:document.documentElement.scrollWidth>innerWidth,badgeOverflow:overflow.length,headerOverlap:brand.right>nav.left+1||nav.right>actions.left+1,columns:getComputedStyle(document.querySelector('#nav-results')).gridTemplateColumns.trim().split(/\\s+/).length,clippedChips:[...bar.querySelectorAll('.chip')].filter(c=>c.scrollWidth>c.clientWidth+1).map(c=>c.textContent),filtersOwnRow:aR.top>=cR.bottom-1&&vR.top>=cR.bottom-1,viewsInside:vR.right<=innerWidth+1,headingHeight:heading.height,catsScrollable:cats.scrollWidth>cats.clientWidth+1,scrollFade:getComputedStyle(cats).maskImage!=='none',endClearance:(()=>{const last=cats.lastElementChild;cats.scrollLeft=cats.scrollWidth;const gap=cats.getBoundingClientRect().right-last.getBoundingClientRect().right;cats.scrollLeft=0;return gap})()}})()`,
       );
       report.mobile.push({ authenticated: true, ...geometry });
       assert.equal(geometry.overflow, false, JSON.stringify(geometry));
       assert.equal(geometry.badgeOverflow, 0, JSON.stringify(geometry));
       assert.equal(geometry.headerOverlap, false, JSON.stringify(geometry));
+      assert.deepEqual(
+        geometry.clippedChips,
+        [],
+        `No clipped filter chip text at ${width}`,
+      );
+      assert.equal(geometry.viewsInside, true, JSON.stringify(geometry));
+      if (width > 650) {
+        assert.equal(
+          geometry.filtersOwnRow,
+          false,
+          `Desktop ${width} keeps chips and controls on one row`,
+        );
+        assert.ok(geometry.headingHeight > 10, JSON.stringify(geometry));
+      } else {
+        assert.equal(
+          geometry.filtersOwnRow,
+          true,
+          `Mobile ${width} moves filters below the chips: ${JSON.stringify(geometry)}`,
+        );
+        assert.ok(geometry.headingHeight <= 46, JSON.stringify(geometry));
+        assert.equal(
+          geometry.scrollFade,
+          true,
+          `Mobile ${width} keeps the chip edge fade: ${JSON.stringify(geometry)}`,
+        );
+        if (geometry.catsScrollable)
+          assert.ok(
+            geometry.endClearance >= 20,
+            `Mobile ${width} clears the last chip of the faded edge: ${JSON.stringify(geometry)}`,
+          );
+      }
       await edit(firstName);
       await preview();
       const editor = await evaluate(`(() => {

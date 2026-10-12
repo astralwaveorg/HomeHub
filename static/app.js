@@ -650,14 +650,17 @@
     main.className = "nav-page";
     const heading = el("div", "page-heading");
     const titles = el("div");
+    const subtitle = el("p");
+    subtitle.append(
+      el("span", "poetic", "每一次抵达都有名字 · "),
+      document.createTextNode(
+        `${state.data.catalog?.total ?? state.data.links.length} 个入口 · 各应用仍需各自登录`,
+      ),
+    );
     titles.append(
       el("div", "eyebrow", "ATLAS OF YOUR SKY"),
       el("h1", "", "星图"),
-      el(
-        "p",
-        "",
-        `每一次抵达都有名字 · ${state.data.catalog?.total ?? state.data.links.length} 个入口 · 各应用仍需各自登录`,
-      ),
+      subtitle,
     );
     if (state.data.catalog?.hidden > 0 && !state.data.authenticated) {
       const hint = el(

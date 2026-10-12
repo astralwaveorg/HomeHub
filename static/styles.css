@@ -1372,17 +1372,45 @@ dialog::backdrop {
   .nav-search {
     margin-bottom: 12px;
   }
+  /* Mobile keeps two deliberate rows: category chips scroll on their own full-width
+     row, while address filters and view controls share the row underneath. */
   .filter-bar {
-    gap: 8px;
-    align-items: flex-start;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 7px 8px;
     margin-bottom: 11px;
   }
-  .categories {
+  .filter-bar > .categories {
     flex-wrap: nowrap;
-    overflow: auto;
-    padding-bottom: 3px;
-    scrollbar-width: none;
+    overflow-x: auto;
     gap: 6px;
+    padding: 1px 0 3px;
+    scrollbar-width: none;
+    overscroll-behavior-x: contain;
+  }
+  .filter-bar > .categories::-webkit-scrollbar {
+    display: none;
+  }
+  /* Scroll affordance replaces the hidden scrollbar: fade the right edge and keep a
+     spacer after the last chip, so hidden chips are signalled instead of silently
+     cut off, and the final chip always scrolls clear of the faded zone. */
+  .filter-bar > .categories {
+    mask-image: linear-gradient(to right, #000 calc(100% - 26px), transparent);
+  }
+  .filter-bar > .categories::after {
+    content: "";
+    flex: 0 0 26px;
+  }
+  .filter-bar > .categories:not(.addr-filter) {
+    grid-column: 1 / -1;
+  }
+  .filter-bar > .addr-filter {
+    grid-column: 1;
+  }
+  .filter-bar > .view-controls {
+    grid-column: 2;
+    justify-self: end;
   }
   .chip {
     padding: 6px 10px;
@@ -1483,14 +1511,28 @@ dialog::backdrop {
     display: none;
   }
   .nav-page .page-heading {
-    padding-top: 13px;
-    padding-bottom: 13px;
+    padding-top: 10px;
+    padding-bottom: 8px;
   }
+  /* The 星图 title and eyebrow are decorative on a narrow screen: the active
+     navigation tab already names the page, so keep them for assistive tech only. */
   .nav-page .page-heading h1 {
-    font-size: 23px;
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    padding: 0;
+    border: 0;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
   }
   .nav-page .page-heading p {
-    margin-top: 1px;
+    margin-top: 0;
+    line-height: 1.55;
+  }
+  .nav-page .page-heading p .poetic {
+    display: none;
   }
   .nav-page .navigation-grid {
     gap: 8px;
