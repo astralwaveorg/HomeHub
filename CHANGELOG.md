@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.4.2
+
+- 再补 3 个官方图标：飞牛下载、飞牛 Docker（应急）、飞牛同步（/static/app/icons 公开路径）。官方图标覆盖达到 25 个服务。
+- AMMDS、飞牛浏览器、iSCSI 管理、音乐整理的图标仍受应用票据保护（内外网均 401），暂保持字符图标。
+
 ## 1.4.1
 
 - 官方图标扩展到 22 个服务：新增 qBittorrent（订阅/刷流）、飞牛影视、飞牛音乐、Navidrome、Music Tag Web、Vertex、1Panel，并替换 OpenList/Tailscale/FnMessageBot 等为你提供的官方地址版本。
