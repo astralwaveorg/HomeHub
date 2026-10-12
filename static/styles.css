@@ -235,6 +235,16 @@ input:focus-visible {
   background: #e9c99918;
   color: var(--gold);
 }
+.account-button {
+  font-size: 15px;
+  text-decoration: none;
+  color: #d6c7e9;
+}
+.account-button:hover,
+.account-button.active {
+  color: var(--gold);
+  background: #e9c99918;
+}
 #main {
   max-width: 1224px;
   margin: auto;

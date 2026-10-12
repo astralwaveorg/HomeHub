@@ -39,9 +39,8 @@
         ><span>Home Hub</span></a
       >
       <nav class="primary-nav" aria-label="主导航">
-        <a href="/" data-route="/">门户</a
-        ><a href="/nav" data-route="/nav">全部服务</a
-        ><a href="/admin" data-route="/admin">管理</a>
+        <a href="/" data-route="/" title="首页 · 晨昏">晨昏</a
+        ><a href="/nav" data-route="/nav" title="全部服务 · 星图">星图</a>
       </nav>
       <button
         id="quiet"
@@ -51,8 +50,16 @@
         title="静谧模式：关闭背景动画"
       >
         <span class="quiet-icon" aria-hidden="true">🌙</span
-        ><span class="quiet-label">静谧</span>
-      </button>
+        ><span class="quiet-label">静谧</span></button
+      ><a
+        id="account"
+        class="icon-button account-button"
+        href="/admin"
+        data-route="/admin"
+        title="登录 · 管理"
+        aria-label="登录或进入管理"
+        >👤</a
+      >
     </header>
     <main id="main" tabindex="-1">
       <div class="loading-state" role="status">

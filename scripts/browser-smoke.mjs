@@ -294,7 +294,7 @@ async function main() {
     report.heading = await evaluate("document.querySelector('#main h1').textContent");
     assert.equal(report.heading, data.settings.tagline || "天空沒有極限", "Portal h1 exactly matches the configured heading");
     assert.equal(await evaluate("document.querySelector('.brand').getAttribute('href')"), "/");
-    assert.ok(await evaluate("document.querySelector('[data-route=\"/\"]').textContent.includes('门户') && document.querySelector('[data-route=\"/nav\"]').textContent.includes('全部服务')"));
+    assert.ok(await evaluate("document.querySelector('[data-route=\"/\"]').textContent.includes('晨昏') && document.querySelector('[data-route=\"/nav\"]').textContent.includes('星图')"));
     report.checks.push("public API/catalog accounting, exact heading, root logo and explicit navigation");
     const assets = await evaluate(`(async()=>{
       const nodes=[document.querySelector('script[src]'),document.querySelector('link[rel=stylesheet]')];

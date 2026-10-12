@@ -419,7 +419,9 @@
     const input = el("input");
     input.type = "search";
     input.id = "service-search";
-    input.placeholder = nav ? "搜索服务名称、描述或别名…" : "搜索你的数字世界…";
+    input.placeholder = nav
+      ? "寻找一颗星 · 名称、描述或别名…"
+      : "搜索你的数字世界…";
     input.setAttribute("aria-label", "搜索服务名称、描述或别名");
     input.autocomplete = "off";
     input.value = state.query;
@@ -487,20 +489,20 @@
     const connected = el("span");
     connected.append(
       el("i", "status-dot"),
-      document.createTextNode(`${state.data.links.length} 个入口，一处抵达`),
+      document.createTextNode(`已点亮 ${state.data.links.length} 处风景`),
     );
     meta.append(connected, el("span", "", "在这里，让灵感自由生长"));
     hero.append(meta);
     const heading = el("div", "section-heading");
-    const h2 = el("h2", "", "常用与收藏");
-    h2.append(el("small", "", "YOUR SHORTCUTS"));
-    heading.append(h2, internal("全部服务 ↗", "/nav", "text-link"));
+    const h2 = el("h2", "", "常驻星光");
+    h2.append(el("small", "", "PINNED & LOVED"));
+    heading.append(h2, internal("展开星图 ↗", "/nav", "text-link"));
     const grid = el("div", "service-grid portal-grid");
     grid.id = "portal-results";
     const bottom = el("div", "portal-bottom");
     const inspiration = el("div", "inspiration", "心有旷野，向光而行。");
     inspiration.append(el("span", "", "灵感致意 · G.E.M.《天空没有极限》"));
-    bottom.append(inspiration, internal("全部服务 →", "/nav", "pill-button"));
+    bottom.append(inspiration, internal("走进星图 →", "/nav", "pill-button"));
     main.append(hero, heading, grid, bottom);
     updatePortalResults();
   }
@@ -524,7 +526,7 @@
         empty(
           state.query ? "没有找到匹配的服务" : "你的数字宇宙，等待点亮",
           state.query
-            ? "试试其他名称，或前往全部服务。"
+            ? "试试其他名称，或前往星图。"
             : state.data.authenticated
               ? "前往管理，添加你的第一个服务。"
               : "管理员添加服务后，会出现在这里。",
@@ -537,19 +539,19 @@
     const heading = el("div", "page-heading");
     const titles = el("div");
     titles.append(
-      el("div", "eyebrow", "EXPLORE YOUR WORLD"),
-      el("h1", "", "全部服务"),
+      el("div", "eyebrow", "ATLAS OF YOUR SKY"),
+      el("h1", "", "星图"),
       el(
         "p",
         "",
-        `完整目录 · ${state.data.catalog?.total ?? state.data.links.length} 个入口 · 各应用独立登录`,
+        `每一次抵达都有名字 · ${state.data.catalog?.total ?? state.data.links.length} 个入口 · 各应用仍需各自登录`,
       ),
     );
     if (state.data.catalog?.hidden > 0 && !state.data.authenticated) {
       const hint = el(
         "p",
         "hint",
-        `另有 ${state.data.catalog.hidden} 个私密入口，`,
+        `尚有 ${state.data.catalog.hidden} 颗暗星，`,
       );
       hint.append(internal("登录后查看", "/admin", "text-link"));
       titles.append(hint);
@@ -650,15 +652,15 @@
     grid.replaceChildren();
     const items = links().filter(matches);
     $("#result-count").textContent =
-      `${items.length} / ${state.data.links.length} 个服务${state.data.authenticated && state.data.links.some((link) => link.visibility === "private") ? " · 含私密入口" : ""}`;
+      `看见 ${items.length} / ${state.data.links.length} 处风景${state.data.authenticated && state.data.links.some((link) => link.visibility === "private") ? " · 含私密入口" : ""}`;
     $("#clear-filters").hidden =
       !state.query && !state.category && !state.favoritesOnly;
     if (!items.length)
       grid.append(
         empty(
-          state.favoritesOnly ? "还没有收藏的服务" : "暂时没有匹配的服务",
+          state.favoritesOnly ? "尚无收藏的星光" : "这片夜空暂时没有匹配",
           state.favoritesOnly
-            ? "点击卡片右上角的星标，把常用服务留在身边。"
+            ? "点击卡片右上角的星标，把它留在你的夜空。"
             : "尝试清除筛选，或换一个关键词。",
         ),
       );
@@ -1097,7 +1099,7 @@
         hint: "例如：影视 movie video",
         maxLength: 200,
       }),
-      checkbox("置顶到门户快捷入口", "pinned", Boolean(link?.pinned)),
+      checkbox("置顶到首页星光位", "pinned", Boolean(link?.pinned)),
     );
     const err = el("p", "form-error");
     err.setAttribute("role", "alert");
@@ -1270,18 +1272,18 @@
   function adminSettings(panel) {
     const settings = state.data.settings;
     const form = el("form", "settings-section");
-    form.append(el("h3", "", "门户与音乐"));
+    form.append(el("h3", "", "首页与音乐"));
     const grid = el("div", "form-grid");
     grid.append(
       field("站点标题", "title", settings.title || "Homehub", "text", {
         required: true,
         maxLength: 40,
       }),
-      field("门户标语", "tagline", settings.tagline || "天空沒有極限", "text", {
+      field("首页标语", "tagline", settings.tagline || "天空沒有極限", "text", {
         required: true,
         maxLength: 100,
       }),
-      field("门户副标题", "subtitle", settings.subtitle, "textarea", {
+      field("首页副标题", "subtitle", settings.subtitle, "textarea", {
         full: true,
         maxLength: 200,
       }),
