@@ -473,6 +473,39 @@ input:focus-visible {
   color: #d5b4e8;
   font-size: 9px;
 }
+.addr-badge {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  font-size: 10px;
+  line-height: 1;
+  padding: 4px 7px;
+  border-radius: 7px;
+  border: 1px solid;
+  letter-spacing: 1px;
+  pointer-events: auto;
+  z-index: 1;
+}
+.addr-内 {
+  color: #9fd8bd;
+  border-color: #9fd8bd55;
+  background: #9fd8bd14;
+}
+.addr-IP {
+  color: #8fb8ea;
+  border-color: #8fb8ea55;
+  background: #8fb8ea14;
+}
+.addr-公 {
+  color: var(--gold);
+  border-color: #e9c99950;
+  background: #e9c99912;
+}
+.addr-飞牛启动 {
+  color: #d5b4e8;
+  border-color: #d5b4e855;
+  background: #d5b4e814;
+}
 .portal-bottom {
   display: flex;
   align-items: center;
@@ -715,6 +748,9 @@ input:focus-visible {
 .list .private-badge {
   right: 40px;
   bottom: 17px;
+}
+.list .addr-badge {
+  top: 14px;
 }
 .list .favorite-button {
   top: 24px;
@@ -1162,6 +1198,12 @@ dialog::backdrop {
     right: 6px;
     bottom: 5px;
     font-size: 8px;
+  }
+  .addr-badge {
+    top: 6px;
+    right: 40px;
+    font-size: 9px;
+    padding: 3px 5px;
   }
   .portal-grid .service-card:nth-child(n + 10) {
     display: none;
