@@ -177,12 +177,13 @@ input:focus-visible {
   height: 36px;
   border: 1px solid #e1c99a70;
   border-radius: 11px;
-  color: var(--gold);
-  font-size: 27px;
-  font-weight: 500;
+  overflow: hidden;
+  background: radial-gradient(circle at 50% 45%, #1c1a3a, #12101f);
 }
-.brand-mark span {
-  font-size: 22px;
+.brand-mark img {
+  width: 34px;
+  height: 34px;
+  object-fit: contain;
 }
 .brand-dot {
   color: var(--gold);
@@ -1016,11 +1017,11 @@ dialog::backdrop {
   .brand-mark {
     width: 28px;
     height: 30px;
-    font-size: 23px;
     border-radius: 9px;
   }
-  .brand-mark span {
-    font-size: 17px;
+  .brand-mark img {
+    width: 28px;
+    height: 28px;
   }
   .primary-nav {
     gap: 1px;

@@ -535,7 +535,8 @@ class Handler(BaseHTTPRequestHandler):
             if self.command!='HEAD':self.wfile.write(b)
             return
         elif path=='/favicon.ico':
-            self.send_response(204);self.common_headers('image/x-icon',0);self.end_headers();return
+            p=STATIC/'favicon.ico'
+            content_type='image/x-icon'
         else:
             raise APIError(404,'页面不存在')
         if not p.is_file():raise APIError(404,'文件不存在')
