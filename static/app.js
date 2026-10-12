@@ -296,10 +296,12 @@
   const quiet = store.get("quiet", false) === true;
   document.body.classList.toggle("quiet", quiet);
   $("#quiet").setAttribute("aria-pressed", String(quiet));
+  $(".quiet-icon").textContent = quiet ? "☀️" : "🌙";
   $("#quiet").addEventListener("click", () => {
     const enabled = document.body.classList.toggle("quiet");
     store.set("quiet", enabled);
     $("#quiet").setAttribute("aria-pressed", String(enabled));
+    $(".quiet-icon").textContent = enabled ? "☀️" : "🌙";
     toast(enabled ? "静谧模式已开启 · 背景动画已暂停" : "静谧模式已关闭");
   });
   function emblem(link, index = 0) {

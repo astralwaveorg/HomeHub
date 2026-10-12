@@ -185,9 +185,6 @@ input:focus-visible {
   height: 34px;
   object-fit: contain;
 }
-.brand-dot {
-  color: var(--gold);
-}
 .primary-nav {
   display: flex;
   gap: 8px;
@@ -225,8 +222,11 @@ input:focus-visible {
   background: #ffffff0b;
 }
 .quiet-button {
-  font-size: 22px;
   color: #d6c7e9;
+}
+.quiet-icon {
+  font-size: 16px;
+  line-height: 1;
 }
 .quiet-label {
   font-size: 12px;
@@ -1037,9 +1037,6 @@ dialog::backdrop {
     min-width: 31px;
     width: 31px;
     height: 36px;
-  }
-  .brand-dot {
-    display: none;
   }
   #main {
     padding: 0 17px;
