@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.4.1
+
+- 官方图标扩展到 22 个服务：新增 qBittorrent（订阅/刷流）、飞牛影视、飞牛音乐、Navidrome、Music Tag Web、Vertex、1Panel，并替换 OpenList/Tailscale/FnMessageBot 等为你提供的官方地址版本。
+- 飞牛应用中心票据保护的图标（同步/去重/虚拟机/相册/百度网盘/快照/指纹 NAS/情侣小站/MCP 等）匿名抓取返回 401，暂保持字符图标。
+
 ## 1.4.0
 
 - 多账户支持：新增 accounts/favorites/prefs 表并自动迁移原管理员；登录按账户校验，权限与原管理员一致。
