@@ -898,15 +898,7 @@
     err.setAttribute("role", "alert");
     const submit = button("登录", "button primary");
     submit.type = "submit";
-    form.append(
-      err,
-      submit,
-      el(
-        "p",
-        "hint",
-        "不知道密码？请通过 1Panel 的容器终端查看初始化密码；此页面不会存储你的登录凭据。",
-      ),
-    );
+    form.append(err, submit);
     bindForm(form, submit, async (data) => {
       const result = await api("/api/login", {
         method: "POST",
