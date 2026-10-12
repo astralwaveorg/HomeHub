@@ -426,12 +426,18 @@ input:focus-visible {
   flex-shrink: 0;
 }
 .service-name {
+  display: flex;
+  align-items: center;
+  gap: 6px;
   font-weight: 550;
   margin-top: 13px;
   max-width: 100%;
+}
+.service-name-text {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  min-width: 0;
   font-size: 13px;
 }
 .service-description {
@@ -474,17 +480,14 @@ input:focus-visible {
   font-size: 9px;
 }
 .addr-badge {
-  position: absolute;
-  top: 10px;
-  right: 10px;
+  flex: none;
   font-size: 10px;
   line-height: 1;
-  padding: 4px 7px;
+  padding: 3px 6px;
   border-radius: 7px;
   border: 1px solid;
   letter-spacing: 1px;
-  pointer-events: auto;
-  z-index: 1;
+  cursor: help;
 }
 .addr-内 {
   color: #9fd8bd;
@@ -748,9 +751,6 @@ input:focus-visible {
 .list .private-badge {
   right: 40px;
   bottom: 17px;
-}
-.list .addr-badge {
-  top: 14px;
 }
 .list .favorite-button {
   top: 24px;
@@ -1200,10 +1200,8 @@ dialog::backdrop {
     font-size: 8px;
   }
   .addr-badge {
-    top: 6px;
-    right: 40px;
     font-size: 9px;
-    padding: 3px 5px;
+    padding: 2px 5px;
   }
   .portal-grid .service-card:nth-child(n + 10) {
     display: none;

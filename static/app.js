@@ -374,8 +374,31 @@
       });
     a.append(emblem(link, index));
     const text = el("div", "service-text");
+    const nameRow = el("div", "service-name");
+    nameRow.append(el("span", "service-name-text", link.name));
+    let addrType = "";
+    if (fnosLaunch) addrType = "飞";
+    else if (url) {
+      const host = new URL(url).hostname;
+      if (/^10\.0\./.test(host) || /^192\.168\./.test(host)) addrType = "内";
+      else if (/^(?:\d{1,3}\.){3}\d{1,3}$/.test(host) || host.includes(":"))
+        addrType = "IP";
+      else addrType = "公";
+    }
+    if (addrType) {
+      const badge = el("span", `addr-badge addr-${addrType}`, addrType);
+      badge.title =
+        addrType === "飞"
+          ? "需从飞牛桌面启动（应用票据保护）"
+          : addrType === "内"
+            ? "内网地址（10.0.x / 192.168.x）"
+            : addrType === "IP"
+              ? "IP 直连地址"
+              : "公网域名";
+      nameRow.append(badge);
+    }
     text.append(
-      el("div", "service-name", link.name),
+      nameRow,
       el(
         "div",
         "service-description",
@@ -410,24 +433,6 @@
     );
     favorite.setAttribute("aria-pressed", String(saved));
     card.append(a, favorite);
-    let addrType = "";
-    if (fnosLaunch) addrType = "飞牛启动";
-    else if (url) {
-      const host = new URL(url).hostname;
-      if (/^10\.0\./.test(host) || /^192\.168\./.test(host)) addrType = "内";
-      else if (/^(?:\d{1,3}\.){3}\d{1,3}$/.test(host) || host.includes(":"))
-        addrType = "IP";
-      else addrType = "公";
-      const badge = el("span", `addr-badge addr-${addrType}`, addrType);
-      badge.title = `地址类型：${
-        addrType === "内"
-          ? "内网（10.0.x / 192.168.x）"
-          : addrType === "IP"
-            ? "IP 直连"
-            : "公网域名"
-      }`;
-      card.append(badge);
-    }
     const badges = [];
     if (link.visibility === "private" && state.data.authenticated)
       badges.push("◇ 私密");
