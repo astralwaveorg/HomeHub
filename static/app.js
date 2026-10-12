@@ -187,6 +187,17 @@
     $("#footer-status").textContent = data.authenticated
       ? `已登录 · ${data.username || "管理员"}`
       : "属于你的每一个日常";
+    const account = $("#account");
+    account.textContent = data.authenticated
+      ? `🧑🏻 ${data.username || "管理员"}`
+      : "👤";
+    account.title = data.authenticated
+      ? `已登录 ${data.username || "管理员"} · 进入管理`
+      : "登录 · 管理";
+    account.setAttribute(
+      "aria-label",
+      data.authenticated ? "进入管理" : "登录或进入管理",
+    );
     syncMusic();
     if (renderAfter) render();
   }
