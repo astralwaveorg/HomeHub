@@ -18,10 +18,13 @@ from contextlib import contextmanager
 from http.cookies import SimpleCookie
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import unquote, urlsplit
+import catalog
 
 ROOT = Path(__file__).resolve().parent
 DATA = Path(os.environ.get('HOMEHUB_DATA', '/data'))
 STATIC = ROOT / 'static'
+VERSION = (ROOT / 'VERSION').read_text().strip() if (ROOT / 'VERSION').is_file() else '1.0.0'
+ASSET_VERSION = hashlib.sha256(b''.join((STATIC / name).read_bytes() for name in ('app.js','styles.css'))).hexdigest()[:16]
 DB = DATA / 'homehub.db'
 ORIGIN = os.environ.get('HOMEHUB_ORIGIN', 'https://homehub.stream:8443').rstrip('/')
 COOKIE_SECURE = os.environ.get('HOMEHUB_COOKIE_SECURE', 'true').lower() == 'true'
@@ -104,13 +107,17 @@ def link_fields(v, c):
     visibility = v.get('visibility', 'private')
     if visibility not in ('public', 'private'):
         raise APIError(400, '可见性必须为 public 或 private')
+    launch_mode = v.get('launch_mode', 'direct')
+    if launch_mode not in ('direct', 'fnos'):
+        raise APIError(400, '启动方式必须为 direct 或 fnos')
     pinned = v.get('pinned', False)
     if not isinstance(pinned, bool):
         raise APIError(400, '常用标记必须为布尔值')
     return {'category_id':category_id, 'name':text(v.get('name', ''), '名称', 80, True),
             'url':url(v.get('url', '')), 'description':text(v.get('description', ''), '描述', 200),
             'icon':text(v.get('icon', 'link'), '图标', 40), 'visibility':visibility,
-            'pinned':int(pinned), 'rank':rank(v.get('rank', 0)), 'aliases':text(v.get('aliases', ''), '搜索别名', 200)}
+            'pinned':int(pinned), 'rank':rank(v.get('rank', 0)), 'aliases':text(v.get('aliases', ''), '搜索别名', 200),
+            'launch_mode': launch_mode}
 
 def settings_fields(v, old):
     if not isinstance(v, dict):
@@ -122,6 +129,12 @@ def settings_fields(v, old):
     if 'musicUrl' in v:
         out['musicUrl'] = url(v['musicUrl'], allow_empty=True, local_media=True)
     return out
+
+def imported_key(value):
+    if value is not None and not catalog.valid_key(value):
+        raise APIError(400, '备份目录标识格式不正确')
+    return value
+
 
 def init():
     DATA.mkdir(parents=True, exist_ok=True)
@@ -135,8 +148,10 @@ def init():
         CREATE TABLE IF NOT EXISTS admin(id INTEGER PRIMARY KEY CHECK(id=1), username TEXT NOT NULL, password TEXT NOT NULL);
         CREATE TABLE IF NOT EXISTS sessions(token_hash TEXT PRIMARY KEY, csrf TEXT NOT NULL, expires INTEGER NOT NULL);
         ''')
+        catalog.ensure_schema(c)
         if not c.execute('SELECT 1 FROM settings').fetchone():
             seed = json.loads((ROOT / 'seed.json').read_text())
+            catalog.validate_seed(seed)
             if seed['settings'].get('musicUrl') == '/media/music.wav':
                 media = DATA / 'media'
                 media.mkdir(exist_ok=True)
@@ -145,10 +160,13 @@ def init():
                     os.chmod(media / 'music.wav', 0o600)
             c.execute('INSERT INTO settings VALUES(1,?)', (json.dumps(seed['settings'], ensure_ascii=False),))
             for cat in seed['categories']:
-                c.execute('INSERT INTO categories(id,name,rank) VALUES(?,?,?)', (cat['id'],cat['name'],cat['rank']))
+                c.execute('INSERT INTO categories(id,name,rank,catalog_key) VALUES(?,?,?,?)', (cat['id'],cat['name'],cat['rank'],cat['catalog_key']))
+                catalog.remember(c, 'category', cat['catalog_key'])
             for item in seed['links']:
                 v = link_fields(item, c)
+                v['catalog_key'] = item['catalog_key']
                 c.execute('INSERT INTO links('+','.join(v)+') VALUES('+','.join('?' for _ in v)+')', tuple(v.values()))
+                catalog.remember(c, 'link', item['catalog_key'])
         if not c.execute('SELECT 1 FROM admin').fetchone():
             secret_file = DATA / 'initial-admin-password'
             # Reuse a pending bootstrap secret if startup was interrupted before DB commit.
@@ -250,7 +268,7 @@ class Handler(BaseHTTPRequestHandler):
             raise APIError(401, '请先登录管理员账号')
         if mutation:
             self.origin_check()
-            if not hmac.compare_digest(self.headers.get('X-CSRF-Token', ''), s['csrf']):
+            if not hmac.compare_digest(self.headers.get('X-CSRF-Token', '').encode('utf-8'), s['csrf'].encode('utf-8')):
                 raise APIError(403, '操作凭据已失效，请刷新页面后重试')
         return s
 
@@ -270,7 +288,11 @@ class Handler(BaseHTTPRequestHandler):
         return {'authenticated':bool(s), 'csrf':s['csrf'] if s else None,
                 'username':c.execute('SELECT username FROM admin').fetchone()[0] if s else None,
                 'settings':json.loads(c.execute('SELECT data FROM settings').fetchone()[0]),
-                'categories':categories, 'links':links}
+                'categories':categories, 'links':links,
+                'catalog':{'total':c.execute('SELECT count(*) FROM links').fetchone()[0],
+                           'visible':len(links),
+                           'hidden':c.execute('SELECT count(*) FROM links').fetchone()[0]-len(links)},
+                'version':VERSION}
 
     def do_HEAD(self):
         self.handle_request()
@@ -310,7 +332,7 @@ class Handler(BaseHTTPRequestHandler):
             return self.reply(200, self.data(c))
         if path == '/api/health' and method in ('GET','HEAD'):
             c.execute('SELECT 1')
-            return self.reply(200, {'ok':True})
+            return self.reply(200, {'ok':True, 'version':VERSION})
         if path == '/api/login' and method == 'POST':
             self.origin_check()
             v = self.body()
@@ -329,7 +351,7 @@ class Handler(BaseHTTPRequestHandler):
                 ATTEMPTS[ip] = (start, count+1)
                 a = c.execute('SELECT * FROM admin').fetchone()
                 good = check_password(password, a['password'])
-                if not good or not hmac.compare_digest(username, a['username']):
+                if not good or not hmac.compare_digest(username.encode('utf-8'), a['username'].encode('utf-8')):
                     raise APIError(401, '用户名或密码不正确')
                 ATTEMPTS.pop(ip, None)
             token, csrf = secrets.token_urlsafe(32), secrets.token_urlsafe(32)
@@ -340,7 +362,7 @@ class Handler(BaseHTTPRequestHandler):
         if path == '/api/export' and method == 'GET':
             self.require_auth(c)
             d = self.data(c)
-            return self.reply(200, {'version':1, **{k:d[k] for k in ('settings','categories','links')}}, {'Content-Disposition':'attachment; filename="homehub-navigation.json"'})
+            return self.reply(200, {'version':1, 'catalogRegistry':catalog.registry(c), **{k:d[k] for k in ('settings','categories','links')}}, {'Content-Disposition':'attachment; filename="homehub-navigation.json"'})
         if method not in ('POST','PUT','DELETE'):
             raise APIError(404, '接口不存在')
         s = self.require_auth(c, mutation=True)
@@ -398,20 +420,42 @@ class Handler(BaseHTTPRequestHandler):
             cats, links=v.get('categories'),v.get('links')
             if v.get('version')!=1 or not isinstance(cats,list) or not isinstance(links,list) or not 0<=len(cats)<=100 or len(links)>2000:
                 raise APIError(400,'备份格式不正确，最多支持 100 个分类 / 2000 个入口')
-            clean_cats=[];seen=set()
+            clean_cats=[];seen=set();category_keys=set()
             for cat in cats:
                 if not isinstance(cat,dict) or type(cat.get('id')) is not int or cat['id']<=0 or cat['id'] in seen:
                     raise APIError(400,'备份分类编号不正确')
-                clean_cats.append({'id':cat['id'],**category_fields(cat)});seen.add(cat['id'])
+                key=imported_key(cat.get('catalog_key'))
+                if key is not None and key in category_keys:
+                    raise APIError(400,'备份分类目录标识重复')
+                if key is not None:category_keys.add(key)
+                clean_cats.append({'id':cat['id'],**category_fields(cat),'catalog_key':key});seen.add(cat['id'])
+            records=v.get('catalogRegistry')
+            if records is not None:
+                if not isinstance(records,list) or len(records)>10000:
+                    raise APIError(400,'目录历史格式不正确')
+                for record in records:
+                    if not isinstance(record,dict) or record.get('kind') not in ('category','link') or not catalog.valid_key(record.get('key')):
+                        raise APIError(400,'目录历史格式不正确')
             old=json.loads(c.execute('SELECT data FROM settings').fetchone()[0])
             newsettings=settings_fields(v.get('settings',{}),old)
             # Transaction rolls back in handle_request if any entry fails validation.
             c.execute('DELETE FROM links');c.execute('DELETE FROM categories')
+            if records is not None:
+                c.execute('DELETE FROM catalog_registry')
+                for record in records:catalog.remember(c,record['kind'],record['key'])
             for cat in clean_cats:
-                c.execute('INSERT INTO categories(id,name,rank) VALUES(?,?,?)',tuple(cat.values()))
+                c.execute('INSERT INTO categories(id,name,rank,catalog_key) VALUES(?,?,?,?)',tuple(cat.values()))
+                if cat['catalog_key']:catalog.remember(c,'category',cat['catalog_key'])
+            link_keys=set()
             for item in links:
                 if not isinstance(item,dict):raise APIError(400,'备份入口格式不正确')
                 clean=link_fields(item,c)
+                key=imported_key(item.get('catalog_key'))
+                if key is not None and key in link_keys:
+                    raise APIError(400,'备份入口目录标识重复')
+                clean['catalog_key']=key
+                if key is not None:
+                    link_keys.add(key);catalog.remember(c,'link',key)
                 c.execute('INSERT INTO links('+','.join(clean)+') VALUES('+','.join('?' for _ in clean)+')',tuple(clean.values()))
             c.execute('UPDATE settings SET data=? WHERE id=1',(json.dumps(newsettings,ensure_ascii=False),));c.commit()
             return self.reply(200,{'ok':True})
@@ -431,6 +475,8 @@ class Handler(BaseHTTPRequestHandler):
             raise APIError(404,'入口或分类不存在')
         if method=='PUT':
             v=self.body()
+            if table=='links' and 'launch_mode' not in v:
+                v['launch_mode']=c.execute('SELECT launch_mode FROM links WHERE id=?',(int(ident),)).fetchone()[0]
             clean=link_fields(v,c) if table=='links' else category_fields(v)
             c.execute(f'UPDATE {table} SET '+','.join(k+'=?' for k in clean)+' WHERE id=?',(*clean.values(),int(ident)))
         elif method=='DELETE':
@@ -464,6 +510,13 @@ class Handler(BaseHTTPRequestHandler):
         else:
             raise APIError(404,'页面不存在')
         if not p.is_file():raise APIError(404,'文件不存在')
+        if p.name=='index.html':
+            b=p.read_bytes().replace(b'__HOMEHUB_ASSET_VERSION__',ASSET_VERSION.encode('ascii'))
+            self.send_response(200)
+            self.common_headers(content_type,len(b),'no-cache')
+            self.end_headers()
+            if self.command!='HEAD':self.wfile.write(b)
+            return
         size=p.stat().st_size
         start,end=0,size-1
         range_header=self.headers.get('Range','') if path.startswith('/media/') else ''
@@ -495,8 +548,19 @@ class Server(ThreadingHTTPServer):
     request_queue_size=64
 
 if __name__=='__main__':
-    init()
     cmd=sys.argv[1] if len(sys.argv)>1 else 'serve'
+    if cmd=='sync-catalog':
+        if not DB.is_file():
+            raise SystemExit('Catalog sync requires an initialized database; start the service first.')
+        if any(x!='--publish-existing' for x in sys.argv[2:]):
+            raise SystemExit('Usage: app.py sync-catalog [--publish-existing]')
+        seed=json.loads((ROOT/'seed.json').read_text())
+        with db() as c:
+            c.execute('BEGIN IMMEDIATE')
+            result=catalog.sync(c,seed,link_fields,publish_existing='--publish-existing' in sys.argv[2:])
+        print(json.dumps(result,ensure_ascii=False))
+        raise SystemExit(0)
+    init()
     if cmd=='admin-password':
         p=DATA/'initial-admin-password'
         if p.exists():print(p.read_text().strip())

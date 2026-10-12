@@ -5,12 +5,15 @@ import http.client
 import importlib.util
 import json
 import os
+import sys
 from pathlib import Path
 import tempfile
 import threading
 import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT))
+SEED = json.loads((ROOT/'seed.json').read_text())
 
 class AppTests(unittest.TestCase):
     @classmethod
@@ -61,16 +64,29 @@ class AppTests(unittest.TestCase):
         self.assertFalse(d['authenticated'])
         self.assertTrue(all(x['visibility']=='public' for x in d['links']))
         public_urls={x['url'] for x in d['links']}
-        self.assertFalse(any('panel.' in x or 'down.' in x for x in public_urls))
+        self.assertTrue(any('panel.' in x for x in public_urls))
+        self.assertTrue(any('down.' in x for x in public_urls))
+        self.assertEqual(len(d['links']),len(SEED['links']))
+        self.assertEqual(d['catalog']['hidden'],0)
+        self.assertTrue(any(x['name']=='Navidrome' for x in d['links']))
         self.assertIsNone(d['csrf'])
+        self.assertEqual(self.request('POST','/api/login',{'username':'错误用户名','password':self.password})[0],401)
         cookie,csrf=self.login()
+        item={'category_id':d['categories'][0]['id'],'name':'Private Test','url':'https://private.example/','visibility':'private'}
+        status,created,_=self.request('POST','/api/links',item,cookie,csrf)
+        self.assertEqual(status,201)
+        _,public,_=self.request('GET','/api/data')
+        self.assertFalse(any(x['url']=='https://private.example/' for x in public['links']))
+        self.assertEqual(public['catalog']['hidden'],1)
         status,d,_=self.request('GET','/api/data',cookie=cookie)
         self.assertTrue(d['authenticated'])
-        self.assertEqual(len(d['links']),27)
-        self.assertEqual(len({x['url'].split('/')[2].split(':')[0] for x in d['links'] if x['url'].startswith('https:')}),21)
+        self.assertEqual(len(d['links']),len(SEED['links'])+1)
+        self.assertEqual(self.request('DELETE',f"/api/links/{created['id']}",cookie=cookie,csrf=csrf)[0],200)
+        self.assertTrue({x['url'] for x in SEED['links']}.issubset({x['url'] for x in d['links']}))
         self.assertEqual(self.request('GET','/api/export')[0],401)
         self.assertEqual(self.request('POST','/api/categories',{'name':'bad','rank':0})[0],401)
         self.assertEqual(self.request('POST','/api/categories',{'name':'bad','rank':0},cookie=cookie)[0],403)
+        self.assertEqual(self.request('POST','/api/categories',{'name':'bad','rank':0},cookie=cookie,csrf='é')[0],403)
         self.assertEqual(self.request('POST','/api/categories',{'name':'bad','rank':0},cookie=cookie,csrf=csrf,origin='https://evil.example')[0],403)
 
     def test_02_crud_and_validation(self):
@@ -106,6 +122,7 @@ class AppTests(unittest.TestCase):
         _,original,_=self.request('GET','/api/export',cookie=cookie)
         large=json.loads(json.dumps(original))
         template=dict(large['links'][0])
+        template.pop('catalog_key',None)
         template['url']='https://example.com/'+('a'*1800)
         large['links']=[dict(template,name=f'入口 {i}',rank=i) for i in range(650)]
         self.assertGreater(len(json.dumps(large).encode()),1024*1024)
@@ -119,6 +136,29 @@ class AppTests(unittest.TestCase):
         self.assertEqual(exported['categories'],[])
         self.assertEqual(self.request('POST','/api/import',exported,cookie,csrf)[0],200)
         self.assertEqual(self.request('POST','/api/import',original,cookie,csrf)[0],200)
+
+    def test_036_launch_modes_backup_identity_and_assets(self):
+        cookie,csrf=self.login()
+        _,data,_=self.request('GET','/api/data',cookie=cookie)
+        original=next(x for x in data['links'] if x.get('launch_mode')=='fnos')
+        edited=dict(original,name='Launch mode test');edited.pop('launch_mode')
+        self.assertEqual(self.request('PUT',f"/api/links/{original['id']}",edited,cookie,csrf)[0],200)
+        _,changed,_=self.request('GET','/api/data',cookie=cookie)
+        row=next(x for x in changed['links'] if x['id']==original['id'])
+        self.assertEqual(row['launch_mode'],'fnos')
+        self.assertEqual(row['catalog_key'],original['catalog_key'])
+        self.assertEqual(self.request('PUT',f"/api/links/{original['id']}",dict(original,launch_mode='unsafe'),cookie,csrf)[0],400)
+        self.assertEqual(self.request('PUT',f"/api/links/{original['id']}",original,cookie,csrf)[0],200)
+        _,backup,_=self.request('GET','/api/export',cookie=cookie)
+        broken=json.loads(json.dumps(backup));broken['links'][1]['catalog_key']=broken['links'][0]['catalog_key']
+        self.assertEqual(self.request('POST','/api/import',broken,cookie,csrf)[0],400)
+        self.assertEqual(self.request('GET','/api/export',cookie=cookie)[1],backup)
+        status,html,h=self.request('GET','/nav')
+        self.assertEqual(status,200)
+        self.assertNotIn(b'__HOMEHUB_ASSET_VERSION__',html)
+        self.assertIn(self.app.ASSET_VERSION.encode(),html)
+        self.assertEqual(h['Cache-Control'],'no-cache')
+        self.assertEqual(self.request('GET','/api/health')[1]['version'],self.app.VERSION)
 
     def test_04_music_and_range(self):
         cookie,csrf=self.login()

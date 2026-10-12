@@ -1,7 +1,7 @@
 {
   "settings": {
     "title": "Homehub",
-    "tagline": "天空，没有边界。",
+    "tagline": "天空沒有極限",
     "subtitle": "安放热爱，也通向远方。这里是我的数字居所。",
     "musicUrl": "/media/music.wav",
     "musicTitle": "无界 · 原创氛围音"
@@ -10,37 +10,44 @@
     {
       "id": 1,
       "name": "影音与阅读",
-      "rank": 10
+      "rank": 10,
+      "catalog_key": "category:media"
     },
     {
       "id": 2,
       "name": "音乐与创作",
-      "rank": 20
+      "rank": 20,
+      "catalog_key": "category:music"
     },
     {
       "id": 3,
       "name": "文件与收藏",
-      "rank": 30
+      "rank": 30,
+      "catalog_key": "category:files"
     },
     {
       "id": 4,
       "name": "生活空间",
-      "rank": 40
+      "rank": 40,
+      "catalog_key": "category:life"
     },
     {
       "id": 5,
       "name": "下载与做种",
-      "rank": 50
+      "rank": 50,
+      "catalog_key": "category:downloads"
     },
     {
       "id": 6,
       "name": "系统管理",
-      "rank": 60
+      "rank": 60,
+      "catalog_key": "category:system"
     },
     {
       "id": 7,
       "name": "家庭应用",
-      "rank": 70
+      "rank": 70,
+      "catalog_key": "category:apps"
     }
   ],
   "links": [
@@ -53,7 +60,9 @@
       "pinned": true,
       "visibility": "public",
       "rank": 10,
-      "aliases": "audiobookshelf abs 播客 阅读"
+      "aliases": "audiobookshelf abs 播客 阅读",
+      "catalog_key": "website:books",
+      "launch_mode": "direct"
     },
     {
       "category_id": 1,
@@ -64,7 +73,9 @@
       "pinned": true,
       "visibility": "public",
       "rank": 20,
-      "aliases": "影视 电影 剧集"
+      "aliases": "影视 电影 剧集",
+      "catalog_key": "website:emby",
+      "launch_mode": "direct"
     },
     {
       "category_id": 1,
@@ -75,18 +86,25 @@
       "pinned": false,
       "visibility": "public",
       "rank": 30,
-      "aliases": "fnos 影视"
+      "aliases": "fnos 影视",
+      "catalog_key": "website:tv",
+      "launch_mode": "direct"
     },
     {
       "category_id": 2,
-      "name": "音乐",
+      "name": "Navidrome",
       "url": "https://music.homehub.stream:8443/",
       "description": "Navidrome · 私人音乐收藏",
       "icon": "music",
       "pinned": true,
       "visibility": "public",
       "rank": 40,
-      "aliases": "navidrome 音乐 听歌"
+      "aliases": "navidrome 音乐 听歌",
+      "catalog_key": "website:music",
+      "launch_mode": "direct",
+      "legacy_names": [
+        "音乐"
+      ]
     },
     {
       "category_id": 2,
@@ -95,9 +113,11 @@
       "description": "Music Tag Web · 封面与标签整理",
       "icon": "tag",
       "pinned": false,
-      "visibility": "private",
+      "visibility": "public",
       "rank": 50,
-      "aliases": "music tag 标签 封面"
+      "aliases": "music tag 标签 封面",
+      "catalog_key": "website:mtag",
+      "launch_mode": "direct"
     },
     {
       "category_id": 2,
@@ -106,9 +126,11 @@
       "description": "Gitea · 创作与版本管理",
       "icon": "code",
       "pinned": false,
-      "visibility": "private",
+      "visibility": "public",
       "rank": 60,
-      "aliases": "gitea git 代码"
+      "aliases": "gitea git 代码",
+      "catalog_key": "website:git",
+      "launch_mode": "direct"
     },
     {
       "category_id": 3,
@@ -119,7 +141,9 @@
       "pinned": true,
       "visibility": "public",
       "rank": 70,
-      "aliases": "openlist alist 网盘 文件"
+      "aliases": "openlist alist 网盘 文件",
+      "catalog_key": "website:alist",
+      "launch_mode": "direct"
     },
     {
       "category_id": 3,
@@ -128,9 +152,11 @@
       "description": "文件同步与远程挂载",
       "icon": "cloud",
       "pinned": false,
-      "visibility": "private",
+      "visibility": "public",
       "rank": 80,
-      "aliases": "webdav 同步"
+      "aliases": "webdav 同步",
+      "catalog_key": "website:dav",
+      "launch_mode": "direct"
     },
     {
       "category_id": 3,
@@ -139,9 +165,11 @@
       "description": "MinIO · 存储控制台",
       "icon": "database",
       "pinned": false,
-      "visibility": "private",
+      "visibility": "public",
       "rank": 90,
-      "aliases": "minio 对象 存储"
+      "aliases": "minio 对象 存储",
+      "catalog_key": "website:storage",
+      "launch_mode": "direct"
     },
     {
       "category_id": 3,
@@ -150,9 +178,11 @@
       "description": "我的图片空间",
       "icon": "image",
       "pinned": false,
-      "visibility": "private",
+      "visibility": "public",
       "rank": 100,
-      "aliases": "图片 照片 photo"
+      "aliases": "图片 照片 photo",
+      "catalog_key": "website:pic",
+      "launch_mode": "direct"
     },
     {
       "category_id": 4,
@@ -161,9 +191,11 @@
       "description": "两个人的专属空间",
       "icon": "heart",
       "pinned": true,
-      "visibility": "private",
+      "visibility": "public",
       "rank": 110,
-      "aliases": "lovespace 情侣 爱 生活"
+      "aliases": "lovespace 情侣 爱 生活",
+      "catalog_key": "website:love",
+      "launch_mode": "direct"
     },
     {
       "category_id": 5,
@@ -172,9 +204,11 @@
       "description": "qBittorrent · 订阅与手动下载",
       "icon": "download",
       "pinned": true,
-      "visibility": "private",
+      "visibility": "public",
       "rank": 120,
-      "aliases": "qb-sub qb qbit 订阅 下载"
+      "aliases": "qb-sub qb qbit 订阅 下载",
+      "catalog_key": "website:down",
+      "launch_mode": "direct"
     },
     {
       "category_id": 5,
@@ -183,9 +217,11 @@
       "description": "qBittorrent · 刷流与分享率",
       "icon": "activity",
       "pinned": false,
-      "visibility": "private",
+      "visibility": "public",
       "rank": 130,
-      "aliases": "qb-flux qb qbit 刷流"
+      "aliases": "qb-flux qb qbit 刷流",
+      "catalog_key": "website:flux",
+      "launch_mode": "direct"
     },
     {
       "category_id": 5,
@@ -194,9 +230,11 @@
       "description": "Transmission · 保种与 H&R",
       "icon": "seed",
       "pinned": false,
-      "visibility": "private",
+      "visibility": "public",
       "rank": 140,
-      "aliases": "tr-seed transmission 保种"
+      "aliases": "tr-seed transmission 保种",
+      "catalog_key": "website:seed",
+      "launch_mode": "direct"
     },
     {
       "category_id": 5,
@@ -205,9 +243,11 @@
       "description": "PT 下载与做种管理",
       "icon": "layers",
       "pinned": false,
-      "visibility": "private",
+      "visibility": "public",
       "rank": 150,
-      "aliases": "vertex pt 下载 保种"
+      "aliases": "vertex pt 下载 保种",
+      "catalog_key": "website:vt",
+      "launch_mode": "direct"
     },
     {
       "category_id": 5,
@@ -216,9 +256,11 @@
       "description": "订阅、下载与媒体入库",
       "icon": "clapperboard",
       "pinned": true,
-      "visibility": "private",
+      "visibility": "public",
       "rank": 160,
-      "aliases": "moviepilot mp 订阅 影视"
+      "aliases": "moviepilot mp 订阅 影视 moviepilot-db moviepilot-redis postgres redis api",
+      "catalog_key": "website:mp",
+      "launch_mode": "direct"
     },
     {
       "category_id": 6,
@@ -227,9 +269,11 @@
       "description": "容器、反代与证书管理",
       "icon": "server",
       "pinned": true,
-      "visibility": "private",
+      "visibility": "public",
       "rank": 170,
-      "aliases": "1panel docker 容器 面板 管理"
+      "aliases": "1panel docker 容器 面板 管理 openresty 反代 证书",
+      "catalog_key": "website:panel",
+      "launch_mode": "direct"
     },
     {
       "category_id": 6,
@@ -238,31 +282,43 @@
       "description": "家庭存储与应用中心",
       "icon": "hard-drive",
       "pinned": true,
-      "visibility": "private",
+      "visibility": "public",
       "rank": 180,
-      "aliases": "fnos 飞牛 nas 系统"
+      "aliases": "fnos 飞牛 nas 系统 文件管理 应用中心 系统设置 文档 预览 文本编辑 docs preview text-editor bun nodejs go",
+      "catalog_key": "website:fn",
+      "launch_mode": "direct"
     },
     {
       "category_id": 6,
-      "name": "家庭网络",
+      "name": "路由器",
       "url": "https://owrt.homehub.stream:8443/",
       "description": "ImmortalWrt · 路由器管理",
       "icon": "wifi",
       "pinned": false,
-      "visibility": "private",
+      "visibility": "public",
       "rank": 190,
-      "aliases": "openwrt immortalwrt 路由 网络"
+      "aliases": "openwrt immortalwrt 路由 网络",
+      "catalog_key": "website:owrt",
+      "launch_mode": "direct",
+      "legacy_names": [
+        "家庭网络"
+      ]
     },
     {
       "category_id": 6,
-      "name": "动态解析",
+      "name": "ddns-go",
       "url": "https://ddns.homehub.stream:8443/",
       "description": "ddns-go · 域名地址更新",
       "icon": "globe",
       "pinned": false,
-      "visibility": "private",
+      "visibility": "public",
       "rank": 200,
-      "aliases": "ddns-go dns 域名 动态"
+      "aliases": "ddns-go dns 域名 动态",
+      "catalog_key": "website:ddns",
+      "launch_mode": "direct",
+      "legacy_names": [
+        "动态解析"
+      ]
     },
     {
       "category_id": 6,
@@ -271,9 +327,11 @@
       "description": "Vaultwarden · 私人密码管理",
       "icon": "shield",
       "pinned": true,
-      "visibility": "private",
+      "visibility": "public",
       "rank": 210,
-      "aliases": "vaultwarden bitwarden 密码 安全"
+      "aliases": "vaultwarden bitwarden 密码 安全",
+      "catalog_key": "website:vault",
+      "launch_mode": "direct"
     },
     {
       "category_id": 2,
@@ -282,9 +340,11 @@
       "description": "音乐批量整理 · 仅内网",
       "icon": "music",
       "pinned": false,
-      "visibility": "private",
+      "visibility": "public",
       "rank": 220,
-      "aliases": "beets 音乐 整理"
+      "aliases": "beets 音乐 整理",
+      "catalog_key": "app:beets",
+      "launch_mode": "direct"
     },
     {
       "category_id": 4,
@@ -293,9 +353,11 @@
       "description": "miair-next · 仅内网",
       "icon": "radio",
       "pinned": false,
-      "visibility": "private",
+      "visibility": "public",
       "rank": 230,
-      "aliases": "miair 小米 音箱 投送"
+      "aliases": "miair 小米 音箱 投送",
+      "catalog_key": "app:miair-next",
+      "launch_mode": "direct"
     },
     {
       "category_id": 1,
@@ -304,9 +366,11 @@
       "description": "另一套媒体服务 · 仅内网",
       "icon": "film",
       "pinned": false,
-      "visibility": "private",
+      "visibility": "public",
       "rank": 240,
-      "aliases": "jellyfin 媒体"
+      "aliases": "jellyfin 媒体",
+      "catalog_key": "app:jellyfin",
+      "launch_mode": "direct"
     },
     {
       "category_id": 7,
@@ -315,9 +379,11 @@
       "description": "家庭媒体应用 · 仅内网",
       "icon": "layers",
       "pinned": false,
-      "visibility": "private",
+      "visibility": "public",
       "rank": 250,
-      "aliases": "ammds 媒体"
+      "aliases": "ammds 媒体 native metatube 元数据",
+      "catalog_key": "app:ammds",
+      "launch_mode": "direct"
     },
     {
       "category_id": 7,
@@ -326,9 +392,11 @@
       "description": "移动端管理 · 仅内网",
       "icon": "smartphone",
       "pinned": false,
-      "visibility": "private",
+      "visibility": "public",
       "rank": 260,
-      "aliases": "handnas 指尖 nas"
+      "aliases": "handnas 指尖 nas",
+      "catalog_key": "app:hand-nas",
+      "launch_mode": "direct"
     },
     {
       "category_id": 7,
@@ -337,9 +405,193 @@
       "description": "FnMessageBot · 仅内网",
       "icon": "bell",
       "pinned": false,
-      "visibility": "private",
+      "visibility": "public",
       "rank": 270,
-      "aliases": "fnmessagebot 推送 通知"
+      "aliases": "fnmessagebot 推送 通知",
+      "catalog_key": "app:fnmessagebot",
+      "launch_mode": "direct"
+    },
+    {
+      "catalog_key": "fnos:baidu-netdisk",
+      "category_id": 3,
+      "name": "百度网盘",
+      "url": "https://fn.homehub.stream:8443/app-baidu-netdisk/",
+      "description": "飞牛内的百度网盘客户端 · 保留原有登录",
+      "icon": "cloud",
+      "pinned": false,
+      "visibility": "public",
+      "rank": 280,
+      "aliases": "baidu netdisk 百度 网盘",
+      "launch_mode": "direct"
+    },
+    {
+      "catalog_key": "fnos:dupclean",
+      "category_id": 3,
+      "name": "重复文件清理",
+      "url": "https://fn.homehub.stream:8443/cgi/ThirdParty/dupclean/index.cgi/",
+      "description": "需在飞牛桌面启动 · 文件去重与清理",
+      "icon": "folder",
+      "pinned": false,
+      "visibility": "public",
+      "rank": 290,
+      "aliases": "dupclean 去重 重复 清理",
+      "launch_mode": "fnos"
+    },
+    {
+      "catalog_key": "fnos:fygo-browser",
+      "category_id": 7,
+      "name": "飞牛浏览器",
+      "url": "https://fn.homehub.stream:8443/app/fygo-browser/browser.html?v=1.0.4-fnos",
+      "description": "需在飞牛桌面启动 · 原生浏览器应用",
+      "icon": "globe",
+      "pinned": false,
+      "visibility": "public",
+      "rank": 300,
+      "aliases": "fygo browser 浏览器",
+      "launch_mode": "fnos"
+    },
+    {
+      "catalog_key": "fnos:knas-music-organizer",
+      "category_id": 2,
+      "name": "音乐整理",
+      "url": "https://fn.homehub.stream:8443/app/knas-music-organizer/?v=0.3.0",
+      "description": "需在飞牛桌面启动 · 音乐库整理工具",
+      "icon": "music",
+      "pinned": false,
+      "visibility": "public",
+      "rank": 310,
+      "aliases": "knas music organizer 音乐 整理",
+      "launch_mode": "fnos"
+    },
+    {
+      "catalog_key": "fnos:tailscale",
+      "category_id": 6,
+      "name": "Tailscale",
+      "url": "https://fn.homehub.stream:8443/cgi/ThirdParty/tailscale/index.cgi",
+      "description": "需在飞牛桌面启动 · VPN 与设备组网",
+      "icon": "network",
+      "pinned": false,
+      "visibility": "public",
+      "rank": 320,
+      "aliases": "tailscale vpn 组网",
+      "launch_mode": "fnos"
+    },
+    {
+      "catalog_key": "fnos:iscsi",
+      "category_id": 6,
+      "name": "iSCSI 管理",
+      "url": "https://fn.homehub.stream:8443/iscsi/",
+      "description": "飞牛块存储管理 · 非 iSCSI 数据端口",
+      "icon": "database",
+      "pinned": false,
+      "visibility": "public",
+      "rank": 330,
+      "aliases": "iscsi 块存储 飞牛",
+      "launch_mode": "direct"
+    },
+    {
+      "catalog_key": "fnos:music",
+      "category_id": 2,
+      "name": "飞牛音乐",
+      "url": "https://fn.homehub.stream:8443/music/",
+      "description": "飞牛原生音乐 · 与 Navidrome 独立",
+      "icon": "music",
+      "pinned": false,
+      "visibility": "public",
+      "rank": 340,
+      "aliases": "trim.music fnos 飞牛音乐",
+      "launch_mode": "direct"
+    },
+    {
+      "catalog_key": "fnos:photos",
+      "category_id": 3,
+      "name": "飞牛相册",
+      "url": "https://fn.homehub.stream:8443/p",
+      "description": "飞牛原生照片库 · 与图片站独立",
+      "icon": "image",
+      "pinned": false,
+      "visibility": "public",
+      "rank": 350,
+      "aliases": "trim.photos 相册 photos 照片",
+      "launch_mode": "direct"
+    },
+    {
+      "catalog_key": "fnos:snapshots",
+      "category_id": 6,
+      "name": "快照管理",
+      "url": "https://fn.homehub.stream:8443/snapshot/",
+      "description": "飞牛存储卷快照",
+      "icon": "layers",
+      "pinned": false,
+      "visibility": "public",
+      "rank": 360,
+      "aliases": "trim.snapshots snapshot 快照",
+      "launch_mode": "direct"
+    },
+    {
+      "catalog_key": "fnos:sync",
+      "category_id": 3,
+      "name": "飞牛同步",
+      "url": "https://fn.homehub.stream:8443/fn-sync/",
+      "description": "文件同步与客户端管理",
+      "icon": "cloud",
+      "pinned": false,
+      "visibility": "public",
+      "rank": 370,
+      "aliases": "trim.sync_server sync 同步",
+      "launch_mode": "direct"
+    },
+    {
+      "catalog_key": "fnos:vm",
+      "category_id": 6,
+      "name": "虚拟机",
+      "url": "https://fn.homehub.stream:8443/vm?ver=0.9.0",
+      "description": "飞牛虚拟机管理 · 保留原有登录",
+      "icon": "server",
+      "pinned": false,
+      "visibility": "public",
+      "rank": 380,
+      "aliases": "trim.vm vm 虚拟机",
+      "launch_mode": "direct"
+    },
+    {
+      "catalog_key": "fnos:mcp",
+      "category_id": 6,
+      "name": "万能 MCP",
+      "url": "https://fn.homehub.stream:8443/cgi/ThirdParty/xiaohu-mcpProxy/index.cgi/",
+      "description": "需在飞牛桌面启动 · MCP 代理管理",
+      "icon": "code",
+      "pinned": false,
+      "visibility": "public",
+      "rank": 390,
+      "aliases": "xiaohu mcproxy mcp 万能MCP",
+      "launch_mode": "fnos"
+    },
+    {
+      "catalog_key": "fnos:docker",
+      "category_id": 6,
+      "name": "飞牛 Docker（应急）",
+      "url": "https://fn.homehub.stream:8443/apps/docker",
+      "description": "仅应急备用 · 日常容器运维请用 1Panel",
+      "icon": "docker",
+      "pinned": false,
+      "visibility": "public",
+      "rank": 400,
+      "aliases": "fnos docker 容器 飞牛 应急",
+      "launch_mode": "direct"
+    },
+    {
+      "catalog_key": "fnos:download",
+      "category_id": 5,
+      "name": "飞牛下载",
+      "url": "https://fn.homehub.stream:8443/apps/download",
+      "description": "飞牛原生下载 · 与 PT 下载器独立",
+      "icon": "download",
+      "pinned": false,
+      "visibility": "public",
+      "rank": 410,
+      "aliases": "fnos download 飞牛下载",
+      "launch_mode": "direct"
     }
   ]
 }

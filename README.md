@@ -17,7 +17,7 @@
 
 NAS `/vol1/1000/docker/homehub/` 是 Compose 项目和源码目录，不是 Docker 引擎目录。
 
-- 容器：`homehub`，镜像 `homehub-portal:1.0.0`，Python 基础镜像摘要固定。
+- 容器：`homehub`，当前版本 1.1.0；发布镜像使用 `homehub-portal:<版本>-<Git commit>` 不可变标签，Python 基础镜像摘要固定。
 - 端口：**仅回环** `127.0.0.1:48080` → 容器 `8080`。
 - 持久化：`data/homehub.db`（管理员哈希、会话、分类、入口和设置）；`data/media/`（背景音乐）。SQLite 使用 WAL；不要仅热复制一个 DB 文件作完整备份。
 - UID/GID：`1000:1000`；宿主机 data 目录必须归该身份且权限 700。
@@ -59,7 +59,11 @@ docker exec homehub python /app/app.py reset-password
 - 站点设置：标题、副标题、音乐标题，上传自己有权使用的 MP3/OGG/WAV/M4A（最多 25 MiB）或填写 HTTPS 音源地址。
 - 账户与备份：修改密码、导出 JSON、确认后导入恢复。
 
-初始录入此前已部署的 21 个 HTTPS 站点，另有 Beets、miair-next、Jellyfin、AMMDS、指尖 NAS、FnMessageBot 6 个已核实的内网入口。已下线服务、notify、未开发的 status 不录入。管理、下载、个人生活和内网入口默认私密；登录后才能看到完整 27 个入口。访客仅看到公开子集。门户自身有顶栏链接，不必重复录入为卡片。
+1.1.0 目录共 **41 个入口**：原有 21 个 HTTPS 站点、6 个内网应用、14 个飞牛原生/系统入口。按用户确认，默认目录全部公开展示，应用自己的登录保护不变；管理员仍可把个别入口设为私密。导航显示目录总数和当前可见数量，有私密入口时会提示登录后查看，避免误以为漏录。
+
+音乐服务明确命名 **Navidrome**，与「飞牛音乐」区分。带「仅内网」标记的入口需要能访问家庭 LAN。5 个带「飞牛启动」标记的应用依赖 fnOS 启动票据：卡片提供说明和「打开飞牛桌面」，请从桌面/应用中心启动，不构造 token 或绕过鉴权。
+
+完整逐项映射见 [服务盘点](docs/service-inventory.md)：15 个容器、30 个已安装原生应用及路由器/系统功能均有对应入口或明确的共享/非 Web 原因。数据库、缓存、API、文档预览和运行时不伪造独立首页；已下线服务、notify、未开发的 status 不录入。门户本身由顶栏访问，不重复凑卡片。
 
 隐藏导航不是后端鉴权；各服务原有登录/访问控制仍须保留。内网 HTTP 链接只能在可达该内网的设备中使用。
 
@@ -71,25 +75,37 @@ docker exec homehub python /app/app.py reset-password
 
 导入限制 32 MiB，最多 100 个分类、2000 个入口。失败导入回滚，不应破坏当前数据。
 
-## 更新与回退
+## 开发、发布与回退
 
-更新前备份源码和数据，仅重建本服务：
+本目录是独立 Git 仓库，main 为主分支，v1.0.0 保留最初上线基线。前端源文件已格式化；功能修改应先在分支开发、运行完整检查、审查 diff、提交，再打包发布。运行数据、NAS 备份、凭据、Git 元数据和生成截图不进入发布镜像或源码提交。
+
+在本地仓库根目录运行：
 
 ```sh
-cd /vol1/1000/docker/homehub
-docker compose build homehub
-docker compose up -d --no-deps homehub
+python3 scripts/check.py
+# 审查并提交代码，使工作区干净后：
+python3 scripts/release.py package --output /tmp/homehub-release
+# 用上一条命令实际打印的 manifest 路径：
+python3 scripts/release.py deploy --manifest /tmp/homehub-release/<manifest>.tar.json --dry-run
+python3 scripts/release.py deploy --manifest /tmp/homehub-release/<manifest>.tar.json
 ```
 
-镜像使用固定本地 tag，不依赖远程同名镜像。不要把本项目的数据库、初始密码或完整备份复制进本地源码仓库。
+标准发布会校验 SHA256、锁定部署、先构建不可变镜像，在 NAS 端在线备份 SQLite/音频/原代码，再仅替换 homehub 服务，核验后端和 HTTPS 门户/导航。失败自动回退代码和实际旧镜像。普通代码回退不覆盖数据库或音频，避免丢掉发布后的用户修改；恢复数据属于单独的有损操作。
 
-回退新站点时，从 1Panel 删除主域名对应的这个网站（不要删除 wildcard 证书或 OpenResty 应用），停止 homehub，保留 data 备份。其它站点不需要改动。
+导航使用稳定 catalog_key 和已见记录做增量同步：后续发布补充新默认入口，但保留已有名称、地址、分类、排序、私密设置及主动删除；不更改管理员密码、站点设置或会话。已有导航内容建议在管理页编辑，seed 主要用于首次安装和新增默认服务。`--publish-existing` 是本次经明确批准的一次性公开目录迁移，后续日常发布不要带这个参数。
+
+详细命令、备份位置、回退与 GitHub 接入条件见 [发布说明](docs/RELEASING.md)。CI 已提供 push/PR 检查；GitHub 手动发布模板默认关闭，需你以后创建远程仓库、配置受信任的 self-hosted runner 和受保护环境后启用。**本轮没有创建远程仓库、推送代码、开放 NAS SSH 或安装 runner。** 首次推送前请检查 Git 作者名/邮箱，当前本地提交沿用 Git 自动识别的本机身份，未修改全局设置。
 
 ## 本地测试
 
 ```sh
-python3 -m unittest discover -s homehub/tests -v
-node --check homehub/static/app.js
+python3 scripts/check.py
+# 或单独运行：
+python3 -m unittest discover -s tests -v
+python3 -m unittest discover -s scripts -v
+node --check static/app.js
+# 可选：已安装 Chrome 时做真实公开页面浏览器验收（Node 22+）
+node scripts/browser-smoke.mjs --url http://127.0.0.1:8080 --screenshots tests/screenshots/local
 ```
 
 本地预览仅使用临时数据，不接触 NAS：
@@ -97,7 +113,7 @@ node --check homehub/static/app.js
 ```sh
 HOMEHUB_DATA="$(mktemp -d /tmp/homehub-preview.XXXXXX)" \
 HOMEHUB_BIND=127.0.0.1 HOMEHUB_ORIGIN=http://127.0.0.1:8080 \
-HOMEHUB_COOKIE_SECURE=false python3 homehub/app.py
+HOMEHUB_COOKIE_SECURE=false python3 app.py
 ```
 
 开发 cookie 开关仅用于 HTTP 本地预览，生产不可关闭。
