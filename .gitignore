@@ -1,0 +1,11 @@
+/data/
+__pycache__/
+*.pyc
+*.log
+.env
+initial-admin-password
+/tests/screenshots/
+/dist/
+/.release/
+.venv/
+.DS_Store

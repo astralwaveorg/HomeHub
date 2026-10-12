@@ -1,0 +1,6 @@
+data
+__pycache__
+tests
+*.pyc
+*.log
+README.md
