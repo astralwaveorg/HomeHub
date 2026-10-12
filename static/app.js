@@ -789,7 +789,7 @@
         : !audio.paused
           ? audio.muted
             ? "正在播放 · 已静音"
-            : "正在播放 · 让晚风有声音"
+            : `正在播放 · ${state.data?.settings?.musicTitle || "背景音乐"}`
           : blocked
             ? "点击 ▷ 开启音乐 · 浏览器限制自动播放"
             : "已暂停 · 点击播放";
