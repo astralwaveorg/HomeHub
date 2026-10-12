@@ -204,7 +204,7 @@ class AppTests(unittest.TestCase):
         cookie,csrf=self.login()
         original=self.request('GET','/api/data')[1]['settings']
         try:
-            for valid in ('/media/music.mp3','/media/music.ogg?v=0123456789abcdef','/media/music.wav?v=aaaaaaaaaaaaaaaa','/media/music.m4a'):
+            for valid in ('/media/music.mp3','/media/music.ogg?v=0123456789abcdef','/media/music.wav?v=aaaaaaaaaaaaaaaa','/media/music.m4a','/media/music.opus?v=0123456789abcdef'):
                 with self.subTest(valid=valid):
                     self.assertEqual(self.request('PUT','/api/settings',{'musicUrl':valid},cookie,csrf)[0],200)
             for invalid in ('/media/other.mp3','/media/music.mp3?v=short','/media/music.mp3?v=0123456789abcdef&x=1','/media/music.mp3?x=0123456789abcdef','/media/music.mp3?v=0123456789abcdef#x','/media/../homehub.db','//evil.example/music.mp3'):
@@ -287,7 +287,7 @@ class AppTests(unittest.TestCase):
         original=self.request('GET','/api/data')[1]['settings']
         try:
             samples={'mp3':b'ID3'+b'0'*20,'ogg':b'OggS'+b'0'*20,
-                     'wav':b'RIFF0000WAVE'+b'0'*20,'m4a':b'0000ftyp'+b'0'*20}
+                     'wav':b'RIFF0000WAVE'+b'0'*20,'m4a':b'0000ftyp'+b'0'*20,'opus':b'OggS'+b'0'*20}
             for ext,audio in samples.items():
                 with self.subTest(ext=ext):
                     status,d,_=self.request('POST','/api/music',audio,cookie,csrf,headers={'X-Filename':'track.'+ext},raw=True)

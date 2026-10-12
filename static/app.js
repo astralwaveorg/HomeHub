@@ -124,7 +124,9 @@
       if (
         music &&
         !/^https:\/\//i.test(raw) &&
-        !/^\/media\/music\.(mp3|ogg|wav|m4a)(\?v=[0-9a-f]{16})?$/i.test(raw)
+        !/^\/media\/music\.(mp3|ogg|wav|m4a|opus)(\?v=[0-9a-f]{16})?$/i.test(
+          raw,
+        )
       )
         return "";
       const u = new URL(raw, location.origin);
@@ -1345,7 +1347,7 @@
       el(
         "p",
         "hint",
-        "选择你有权使用的音频。支持 MP3 / OGG / WAV / M4A，最大 25 MiB。上传成功后直接设为站点默认背景音乐，标题取文件名；自动播放沿用上方已保存的开关。",
+        "选择你有权使用的音频。支持 MP3 / OGG / WAV / M4A / OPUS，最大 25 MiB。上传成功后直接设为站点默认背景音乐，标题取文件名；自动播放沿用上方已保存的开关。",
       ),
     );
     const upload = el("form");
@@ -1354,7 +1356,7 @@
     const input = el("input");
     input.type = "file";
     input.accept =
-      ".mp3,.ogg,.wav,.m4a,audio/mpeg,audio/ogg,audio/wav,audio/mp4";
+      ".mp3,.ogg,.wav,.m4a,.opus,audio/mpeg,audio/ogg,audio/wav,audio/mp4,audio/opus";
     input.name = "music";
     input.required = true;
     label.append(input);
@@ -1368,8 +1370,8 @@
       if (!file) throw new Error("请选择音频文件。");
       if (file.size > 25 * 1024 * 1024)
         throw new Error("音频超过 25 MiB，请选择更小的文件。");
-      if (!/\.(mp3|ogg|wav|m4a)$/i.test(file.name))
-        throw new Error("仅支持 MP3、OGG、WAV、M4A 格式。");
+      if (!/\.(mp3|ogg|wav|m4a|opus)$/i.test(file.name))
+        throw new Error("仅支持 MP3、OGG、WAV、M4A、OPUS 格式。");
       const result = await api("/api/music", {
         method: "POST",
         body: file,

@@ -78,7 +78,7 @@ def url(value, allow_empty=False, local_media=False):
     value = text(value, '链接', 2048)
     if allow_empty and not value:
         return ''
-    if local_media and re.fullmatch(r'/media/music\.(mp3|ogg|wav|m4a)(?:\?v=[0-9a-f]{16})?', value):
+    if local_media and re.fullmatch(r'/media/music\.(mp3|ogg|wav|m4a|opus)(?:\?v=[0-9a-f]{16})?', value):
         return value
     try:
         u = urlsplit(value)
@@ -386,12 +386,12 @@ class Handler(BaseHTTPRequestHandler):
             ext = Path(basename).suffix.lower()
             music_title = ''.join(ch for ch in Path(basename).stem
                                   if not unicodedata.category(ch).startswith('C')).strip()[:100] or '背景音乐'
-            if ext not in ('.mp3','.ogg','.wav','.m4a'):
-                raise APIError(400, '支持 MP3、OGG、WAV 和 M4A 音频')
+            if ext not in ('.mp3','.ogg','.wav','.m4a','.opus'):
+                raise APIError(400, '支持 MP3、OGG、WAV、M4A 和 OPUS 音频')
             b = self.body(MAX_AUDIO, raw=True)
             if len(b)<16:
                 raise APIError(400, '音频文件为空或无效')
-            valid = (ext == '.mp3' and (b.startswith(b'ID3') or (b[0]==255 and b[1]&224==224))) or (ext=='.ogg' and b.startswith(b'OggS')) or (ext=='.wav' and b.startswith(b'RIFF') and b[8:12]==b'WAVE') or (ext=='.m4a' and b[4:8]==b'ftyp')
+            valid = (ext == '.mp3' and (b.startswith(b'ID3') or (b[0]==255 and b[1]&224==224))) or (ext in ('.ogg','.opus') and b.startswith(b'OggS')) or (ext=='.wav' and b.startswith(b'RIFF') and b[8:12]==b'WAVE') or (ext=='.m4a' and b[4:8]==b'ftyp')
             if not valid:
                 raise APIError(400, '文件内容与音频格式不匹配')
             music_url = '/media/music' + ext + '?v=' + hashlib.sha256(b).hexdigest()[:16]
@@ -526,9 +526,9 @@ class Handler(BaseHTTPRequestHandler):
             if not p.is_relative_to(STATIC.resolve()):
                 raise APIError(404,'文件不存在')
             content_type=mimetypes.guess_type(p)[0] or 'application/octet-stream'
-        elif re.fullmatch(r'/media/music\.(mp3|ogg|wav|m4a)',path):
+        elif re.fullmatch(r'/media/music\.(mp3|ogg|wav|m4a|opus)',path):
             p=DATA/path.lstrip('/')
-            content_type={'.mp3':'audio/mpeg','.ogg':'audio/ogg','.wav':'audio/wav','.m4a':'audio/mp4'}[p.suffix]
+            content_type={'.mp3':'audio/mpeg','.ogg':'audio/ogg','.wav':'audio/wav','.m4a':'audio/mp4','.opus':'audio/ogg'}[p.suffix]
         elif path=='/robots.txt':
             b=b'User-agent: *\nDisallow: /admin\nDisallow: /api/\n'
             self.send_response(200);self.common_headers('text/plain',len(b));self.end_headers()
