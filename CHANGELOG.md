@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.3.0
+
+- 星图排序改为地址类型优先：公网域名 → 公网 IP → 飞牛内部 → 内网，同类型内保持原有排序。
+- 新增地址类型多选筛选（公/IP/飞/内），可组合查看，偏好本地记忆，清除筛选一并重置。
+- 14 个服务启用已校验的官方 logo 图标（Jellyfin、Gitea、Emby、Navidrome 相关、 Transmission、Tailscale、Beets、OpenWrt、Vaultwarden、Alist、MinIO、MoviePilot、ddns-go、FnMessageBot），其余保持原有字符图标；图标清单与资源指纹联动。
+
 ## 1.2.3
 
 - 地址类型角标移到服务名称后内联显示（如「飞牛影视 ·公」），标题过长自动省略且角标始终可见；飞牛启动应用显示「飞」。

@@ -425,6 +425,16 @@ input:focus-visible {
   border: 1px solid #ffffff08;
   flex-shrink: 0;
 }
+.emblem-official {
+  background:
+    radial-gradient(circle at 50% 40%, #262640, #171829),
+    var(--emblem-bg, #a8b5e51a);
+}
+.emblem-image {
+  width: 27px;
+  height: 27px;
+  object-fit: contain;
+}
 .service-name {
   display: flex;
   align-items: center;

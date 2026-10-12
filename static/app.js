@@ -34,6 +34,14 @@
     ),
     density: store.get("density", "grid"),
     adminTab: "links",
+    addrFilter: new Set(
+      (() => {
+        const saved = store.get("addrFilter", []);
+        return Array.isArray(saved)
+          ? saved.filter((x) => ["公", "IP", "飞", "内"].includes(x))
+          : [];
+      })(),
+    ),
     musicSource: "",
     musicGeneration: 0,
     musicAutoplaySource: "",
@@ -206,6 +214,19 @@
   const byRank = (a, b) =>
     Number(a.rank || 0) - Number(b.rank || 0) ||
     String(a.name || "").localeCompare(String(b.name || ""), "zh-CN");
+  function addrTypeOf(link) {
+    if (link.launch_mode === "fnos") return "飞";
+    try {
+      const host = new URL(safeUrl(link.url)).hostname;
+      if (/^10\.0\./.test(host) || /^192\.168\./.test(host)) return "内";
+      if (/^(?:\d{1,3}\.){3}\d{1,3}$/.test(host) || host.includes(":"))
+        return "IP";
+    } catch {
+      return "";
+    }
+    return "公";
+  }
+  const ADDR_ORDER = { 公: 0, IP: 1, 飞: 2, 内: 3, "": 4 };
   function categories() {
     return [...(state.data?.categories || [])].sort(byRank);
   }
@@ -319,6 +340,17 @@
   });
   function emblem(link, index = 0) {
     const node = el("span", "emblem");
+    const official = window.HOMEHUB_ICONS?.[link.catalog_key];
+    if (official) {
+      const img = el("img", "emblem-image");
+      img.src = official.src;
+      img.alt = "";
+      img.loading = "lazy";
+      img.decoding = "async";
+      node.append(img);
+      node.classList.add("emblem-official");
+      return node;
+    }
     const icon = String(link.icon || "").trim();
     node.textContent =
       symbols[icon.toLowerCase()] ||
@@ -376,15 +408,7 @@
     const text = el("div", "service-text");
     const nameRow = el("div", "service-name");
     nameRow.append(el("span", "service-name-text", link.name));
-    let addrType = "";
-    if (fnosLaunch) addrType = "飞";
-    else if (url) {
-      const host = new URL(url).hostname;
-      if (/^10\.0\./.test(host) || /^192\.168\./.test(host)) addrType = "内";
-      else if (/^(?:\d{1,3}\.){3}\d{1,3}$/.test(host) || host.includes(":"))
-        addrType = "IP";
-      else addrType = "公";
-    }
+    const addrType = addrTypeOf(link);
     if (addrType) {
       const badge = el("span", `addr-badge addr-${addrType}`, addrType);
       badge.title =
@@ -619,6 +643,22 @@
     favorite.id = "favorites-filter";
     favorite.setAttribute("aria-pressed", "false");
     chips.append(favorite);
+    const addrChips = el("div", "categories addr-filter");
+    addrChips.setAttribute("aria-label", "地址类型筛选（可多选）");
+    function addrChip(value) {
+      const active = state.addrFilter.has(value);
+      const node = button(value, "chip" + (active ? " active" : ""), () => {
+        if (state.addrFilter.has(value)) state.addrFilter.delete(value);
+        else state.addrFilter.add(value);
+        store.set("addrFilter", [...state.addrFilter]);
+        renderFilterChips();
+        updateResults();
+      });
+      node.dataset.addr = value;
+      node.setAttribute("aria-pressed", String(active));
+      addrChips.append(node);
+    }
+    ["公", "IP", "飞", "内"].forEach(addrChip);
     const views = el("div", "view-controls");
     ["grid", "list"].forEach((mode) => {
       const node = button(
@@ -641,7 +681,7 @@
       node.setAttribute("aria-pressed", String(state.density === mode));
       views.append(node);
     });
-    bar.append(chips, views);
+    bar.append(chips, addrChips, views);
     const meta = el("div", "results-meta");
     const count = el("span");
     count.id = "result-count";
@@ -650,6 +690,8 @@
       state.query = "";
       state.category = "";
       state.favoritesOnly = false;
+      state.addrFilter.clear();
+      store.set("addrFilter", []);
       $("#service-search").value = "";
       renderFilterChips();
       updateResults();
@@ -672,17 +714,31 @@
     const favorite = $("#favorites-filter");
     favorite.classList.toggle("active", state.favoritesOnly);
     favorite.setAttribute("aria-pressed", String(state.favoritesOnly));
+    document.querySelectorAll("[data-addr]").forEach((node) => {
+      const active = state.addrFilter.has(node.dataset.addr);
+      node.classList.toggle("active", active);
+      node.setAttribute("aria-pressed", String(active));
+    });
   }
   function updateResults() {
     const grid = $("#nav-results");
     if (!grid) return;
     grid.classList.toggle("list", state.density === "list");
     grid.replaceChildren();
-    const items = links().filter(matches);
+    let items = links().filter(matches);
+    if (state.addrFilter.size)
+      items = items.filter((link) => state.addrFilter.has(addrTypeOf(link)));
+    items.sort(
+      (a, b) =>
+        ADDR_ORDER[addrTypeOf(a)] - ADDR_ORDER[addrTypeOf(b)] || byRank(a, b),
+    );
     $("#result-count").textContent =
       `看见 ${items.length} / ${state.data.links.length} 处风景${state.data.authenticated && state.data.links.some((link) => link.visibility === "private") ? " · 含私密入口" : ""}`;
     $("#clear-filters").hidden =
-      !state.query && !state.category && !state.favoritesOnly;
+      !state.query &&
+      !state.category &&
+      !state.favoritesOnly &&
+      !state.addrFilter.size;
     if (!items.length)
       grid.append(
         empty(

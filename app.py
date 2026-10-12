@@ -25,7 +25,7 @@ ROOT = Path(__file__).resolve().parent
 DATA = Path(os.environ.get('HOMEHUB_DATA', '/data'))
 STATIC = ROOT / 'static'
 VERSION = (ROOT / 'VERSION').read_text().strip() if (ROOT / 'VERSION').is_file() else '1.0.0'
-ASSET_VERSION = hashlib.sha256(b''.join((STATIC / name).read_bytes() for name in ('app.js','styles.css'))).hexdigest()[:16]
+ASSET_VERSION = hashlib.sha256(b''.join((STATIC / name).read_bytes() for name in ('app.js','styles.css','icons.js'))).hexdigest()[:16]
 DB = DATA / 'homehub.db'
 ORIGIN = os.environ.get('HOMEHUB_ORIGIN', 'https://homehub.stream:8443').rstrip('/')
 COOKIE_SECURE = os.environ.get('HOMEHUB_COOKIE_SECURE', 'true').lower() == 'true'
