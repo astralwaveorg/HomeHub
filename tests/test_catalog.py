@@ -59,6 +59,70 @@ class CatalogTests(unittest.TestCase):
             c.execute('BEGIN IMMEDIATE')
             return catalog.sync(c, seed or SEED, self.app.link_fields, publish_existing=publish)
 
+    def overlay(self, links, categories=None, settings=None):
+        return {'settings': settings or {}, 'categories': categories or [], 'links': links}
+
+    def test_merge_adds_service_to_existing_category_by_key(self):
+        extra = self.overlay([
+            {'catalog_key':'website:newthing','category_key':'category:music','name':'新服务',
+             'url':'https://new.homehub.stream:8443/','description':'d','icon':'link',
+             'visibility':'public','rank':71,'aliases':'new','launch_mode':'direct'},
+        ])
+        merged = catalog.merge(SEED, extra)
+        category = next(c for c in merged['categories'] if c['catalog_key']=='category:music')
+        added = next(l for l in merged['links'] if l['catalog_key']=='website:newthing')
+        self.assertEqual(added['category_id'], category['id'])
+        self.assertNotIn('category_key', added)
+        self.assertEqual(len(merged['links']), len(SEED['links'])+1)
+        catalog.validate_seed(merged)
+
+    def test_merge_overlay_wins_by_key_and_keeps_bundled_entries(self):
+        extra = self.overlay([
+            {'catalog_key':'website:music','category_key':'category:music','name':'改名后的音乐',
+             'url':'https://music.homehub.stream:8443/','description':'覆盖','icon':'music',
+             'visibility':'public','rank':41,'aliases':'music','launch_mode':'direct'},
+        ], categories=[{'id':1,'name':'覆盖分类名','rank':25,'catalog_key':'category:music'}])
+        merged = catalog.merge(SEED, extra)
+        music = next(l for l in merged['links'] if l['catalog_key']=='website:music')
+        self.assertEqual(music['name'], '改名后的音乐')
+        self.assertEqual(len(merged['links']), len(SEED['links']))
+        self.assertEqual(next(c for c in merged['categories'] if c['catalog_key']=='category:music')['name'], '覆盖分类名')
+        self.assertIn('website:musicbrainz', {l['catalog_key'] for l in merged['links']})
+
+    def test_merge_new_category_and_url_collision_prefers_overlay(self):
+        extra = self.overlay([
+            {'catalog_key':'website:custom','category_key':'category:custom','name':'自制',
+             'url':'https://books.homehub.stream:8443/','description':'same url','icon':'link',
+             'visibility':'public','rank':5,'aliases':'','launch_mode':'direct'},
+        ], categories=[{'id':9,'name':'自制分类','rank':5,'catalog_key':'category:custom'}])
+        merged = catalog.merge(SEED, extra)
+        urls = [l['url'] for l in merged['links']]
+        self.assertEqual(len(urls), len(set(urls)))
+        kept = next(l for l in merged['links'] if l['url']=='https://books.homehub.stream:8443/')
+        self.assertEqual(kept['catalog_key'], 'website:custom')
+        self.assertIn('category:custom', {c['catalog_key'] for c in merged['categories']})
+
+    def test_merge_rejects_unknown_category_key(self):
+        extra = self.overlay([
+            {'catalog_key':'website:orphan','category_key':'category:missing','name':'孤儿',
+             'url':'https://orphan.homehub.stream:8443/','description':'','icon':'link',
+             'visibility':'public','rank':1,'aliases':'','launch_mode':'direct'},
+        ])
+        with self.assertRaises(ValueError):
+            catalog.merge(SEED, extra)
+        self.assertTrue(catalog.valid_key('category:music'))
+        self.assertFalse(catalog.valid_key('Category:Music'))
+        self.assertFalse(catalog.valid_key(''))
+
+    def test_overlay_alone_without_categories_validates(self):
+        document = self.overlay([
+            {'catalog_key':'website:only','category_key':'category:files','name':'只有一条',
+             'url':'https://only.homehub.stream:8443/','description':'','icon':'link',
+             'visibility':'public','rank':1,'aliases':'','launch_mode':'direct'},
+        ])
+        catalog.validate_seed(document)
+        self.assertEqual(len(catalog.merge(SEED, document)['links']), len(SEED['links'])+1)
+
     def test_legacy_upgrade_and_explicit_publication_preserve_owner(self):
         self.old_database();before=self.snapshot_auth_settings()
         result=self.sync(publish=True)
@@ -148,9 +212,10 @@ class CatalogTests(unittest.TestCase):
 
     def test_seed_coverage_and_native_launch_modes(self):
         catalog.validate_seed(SEED)
-        self.assertEqual(len(SEED['links']),41)
+        self.assertEqual(len(SEED['links']),42)
         self.assertTrue(all(x['visibility']=='public' for x in SEED['links']))
         self.assertEqual(sum(x.get('launch_mode')=='fnos' for x in SEED['links']),5)
+        self.assertIn('website:musicbrainz', {x['catalog_key'] for x in SEED['links']})
         old_urls={x['url'] for x in OLD['links']}
         self.assertTrue(old_urls.issubset({x['url'] for x in SEED['links']}))
 

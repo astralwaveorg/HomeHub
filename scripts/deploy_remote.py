@@ -122,6 +122,12 @@ def backup():
     if media.exists():
         for p in media.rglob('*'): safe(p)
         shutil.copytree(media, safe(dest / 'media'))
+    # The owner-editable catalog overlay is not part of the image; keep it with the backup.
+    for extra in ('seed.json', 'seed.json.bak'):
+        overlay = safe(ROOT / 'data' / extra)
+        if overlay.is_file() and not overlay.is_symlink():
+            shutil.copyfile(overlay, safe(dest / extra))
+            metadata.setdefault('catalog_files', []).append(extra)
     atomic(dest / 'runtime.json', (json.dumps(metadata, indent=2) + '\n').encode())
     print('NAS backup: ' + name, flush=True)
     return name, metadata

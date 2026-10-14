@@ -134,6 +134,19 @@
       "launch_mode": "direct"
     },
     {
+      "category_id": 2,
+      "name": "MusicBrainz",
+      "url": "https://mb.homehub.stream:8443/",
+      "description": "开放音乐元数据库 · 自建镜像",
+      "icon": "music",
+      "pinned": false,
+      "visibility": "public",
+      "rank": 70,
+      "aliases": "musicbrainz mb 音乐数据库 元数据 标签 picard",
+      "catalog_key": "website:musicbrainz",
+      "launch_mode": "direct"
+    },
+    {
       "category_id": 3,
       "name": "文件空间",
       "url": "https://alist.homehub.stream:8443/",

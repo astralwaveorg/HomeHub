@@ -156,6 +156,163 @@ def resolve_icon(value, missing_ok=False):
     return icon_library.resolve_reference(value, DATA, STATIC, missing_ok)
 
 
+CATALOG_SEED_LIMIT = 1024 * 1024
+CATALOG_LOCK = threading.Lock()
+CATALOG_WATCH = {'at': 0.0}
+
+
+def catalog_files():
+    """Return (bundled catalog, optional overlay written by the owner in DATA)."""
+    overlay = DATA / 'seed.json'
+    if overlay.is_symlink():
+        raise ValueError('data/seed.json 不能是符号链接')
+    return ROOT / 'seed.json', (overlay if overlay.is_file() else None)
+
+
+def catalog_stamp(*paths):
+    stamps = []
+    for path in paths:
+        if path is None:
+            stamps.append(None)
+        else:
+            stat = path.stat()
+            stamps.append([stat.st_size, stat.st_mtime_ns])
+    return stamps
+
+
+def load_catalog(base=None, overlay=None):
+    """Parse, validate and merge the bundled catalog with the optional overlay."""
+    base, overlay = catalog_files() if base is None else (base, overlay)
+    documents = []
+    for path in (base, overlay):
+        if path is None:
+            continue
+        try:
+            document = json.loads(path.read_text(encoding='utf-8'))
+        except (UnicodeError, ValueError, OSError) as error:
+            raise ValueError(f'{path.name} 不是有效的 JSON 目录：{error}') from error
+        catalog.validate_seed(document)
+        documents.append(document)
+    return catalog.merge(*documents)
+
+
+def read_catalog_state():
+    try:
+        with db() as c:
+            row = c.execute('SELECT data FROM catalog_state WHERE id=1').fetchone()
+        return json.loads(row['data']) if row else {}
+    except (sqlite3.Error, ValueError):
+        return {}
+
+
+def write_catalog_state(state):
+    with db() as c:
+        c.execute('INSERT INTO catalog_state(id,data) VALUES(1,?) ON CONFLICT(id) DO UPDATE SET data=excluded.data',
+                  (json.dumps(state, ensure_ascii=False),))
+
+
+def apply_catalog(force=False, publish_existing=False):
+    """Sync the current catalog files into SQLite; safe to call on every request."""
+    with CATALOG_LOCK:
+        base, overlay = catalog_files()
+        stamp = catalog_stamp(base, overlay)
+        state = read_catalog_state()
+        if not force and state.get('stamp') == stamp:
+            return {'ok': True, 'changed': False, 'summary': state.get('summary')}
+        try:
+            seed = load_catalog(base, overlay)
+        except (ValueError, OSError) as error:
+            previous = read_catalog_state()
+            failed = {**previous, 'stamp': stamp, 'error': str(error), 'errorAt': time.time(),
+                      'source': str(overlay or base)}
+            write_catalog_state(failed)
+            print('Catalog reload rejected:', error, flush=True)
+            return {'ok': False, 'changed': False, 'error': str(error)}
+        with db() as c:
+            c.execute('BEGIN IMMEDIATE')
+            summary = catalog.sync(c, seed, link_fields, publish_existing=publish_existing)
+        applied = {'stamp': stamp, 'summary': summary, 'appliedAt': time.time(),
+                   'source': str(overlay or base), 'overlay': bool(overlay),
+                   'hash': hashlib.sha256(json.dumps(seed, ensure_ascii=False, sort_keys=True).encode()).hexdigest()[:16]}
+        write_catalog_state(applied)
+        return {'ok': True, 'changed': True, 'summary': summary, 'state': applied}
+
+
+def maybe_apply_catalog():
+    """Cheap change check used by read endpoints; the file watcher of last resort."""
+    now = time.monotonic()
+    if now - CATALOG_WATCH['at'] < 1.0:
+        return
+    CATALOG_WATCH['at'] = now
+    try:
+        result = apply_catalog()
+        if result.get('changed'):
+            print('Catalog hot reload applied:', json.dumps(result['summary'], ensure_ascii=False), flush=True)
+    except (OSError, sqlite3.Error, ValueError) as error:
+        print('Catalog hot reload failed:', error, flush=True)
+
+
+def catalog_status():
+    base, overlay = catalog_files()
+    stamp = catalog_stamp(base, overlay)
+    state = read_catalog_state()
+    return {
+        'bundledPath': str(base),
+        'overlayPath': str(DATA / 'seed.json'),
+        'overlay': str(overlay) if overlay else None,
+        'source': state.get('source'),
+        'appliedAt': state.get('appliedAt'),
+        'summary': state.get('summary'),
+        'total': (state.get('summary') or {}).get('total'),
+        'pending': state.get('stamp') != stamp,
+        'error': state.get('error'),
+        'errorAt': state.get('errorAt'),
+    }
+
+
+def validate_overlay(document):
+    """Dry-run an overlay against the bundled catalog before it is stored."""
+    catalog.validate_seed(document)
+    base, _ = catalog_files()
+    bundled = json.loads(base.read_text(encoding='utf-8'))
+    return catalog.merge(bundled, document)
+
+
+def store_overlay(body):
+    target = DATA / 'seed.json'
+    if target.is_symlink():
+        raise APIError(400, 'data/seed.json 不能是符号链接')
+    if target.is_file():
+        backup = DATA / 'seed.json.bak'
+        if backup.is_symlink():
+            raise APIError(400, '目录备份不能是符号链接')
+        shutil.copyfile(target, backup)
+        os.chmod(backup, 0o600)
+    temporary = DATA / ('.seed-' + secrets.token_hex(8))
+    fd = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    try:
+        with os.fdopen(fd, 'wb') as stream:
+            stream.write(body)
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.replace(temporary, target)
+    finally:
+        if temporary.exists() and temporary.parent == DATA:
+            temporary.unlink()
+
+
+def remove_overlay():
+    target = DATA / 'seed.json'
+    if target.is_symlink():
+        raise APIError(400, 'data/seed.json 不能是符号链接')
+    if target.is_file():
+        backup = DATA / 'seed.json.bak'
+        if backup.is_symlink():
+            raise APIError(400, '目录备份不能是符号链接')
+        os.replace(target, backup)
+        os.chmod(backup, 0o600)
+
+
 def init():
     DATA.mkdir(parents=True, exist_ok=True)
     os.chmod(DATA, 0o700)
@@ -170,6 +327,7 @@ def init():
         CREATE TABLE IF NOT EXISTS accounts(id INTEGER PRIMARY KEY, username TEXT NOT NULL UNIQUE, password TEXT NOT NULL, display TEXT NOT NULL DEFAULT '');
         CREATE TABLE IF NOT EXISTS favorites(account_id INTEGER NOT NULL REFERENCES accounts(id), link_id INTEGER NOT NULL REFERENCES links(id) ON DELETE CASCADE, PRIMARY KEY(account_id,link_id));
         CREATE TABLE IF NOT EXISTS prefs(account_id INTEGER PRIMARY KEY REFERENCES accounts(id), music_autoplay INTEGER, volume REAL, muted INTEGER);
+        CREATE TABLE IF NOT EXISTS catalog_state(id INTEGER PRIMARY KEY CHECK(id=1), data TEXT NOT NULL);
         ''')
         try:
             c.execute('ALTER TABLE sessions ADD COLUMN account_id INTEGER NOT NULL DEFAULT 0')
@@ -179,8 +337,7 @@ def init():
             c.execute("ALTER TABLE links ADD COLUMN icon_url TEXT NOT NULL DEFAULT ''")
         catalog.ensure_schema(c)
         if not c.execute('SELECT 1 FROM settings').fetchone():
-            seed = json.loads((ROOT / 'seed.json').read_text())
-            catalog.validate_seed(seed)
+            seed = load_catalog()
             if seed['settings'].get('musicUrl') == '/media/music.wav':
                 media = DATA / 'media'
                 media.mkdir(exist_ok=True)
@@ -358,6 +515,8 @@ class Handler(BaseHTTPRequestHandler):
             self.connection.settimeout(30)
             path = urlsplit(self.path).path
             if path.startswith('/api/'):
+                if path in ('/api/data','/api/me','/api/export','/api/catalog') and self.command in ('GET','HEAD'):
+                    maybe_apply_catalog()
                 with db() as c:
                     self.api(path, c)
             elif self.command in ('GET', 'HEAD'):
@@ -387,6 +546,9 @@ class Handler(BaseHTTPRequestHandler):
         if path == '/api/icons' and method == 'GET':
             self.require_auth(c)
             return self.reply(200, {'library':icon_library.list_icons(DATA)})
+        if path == '/api/catalog' and method in ('GET','HEAD'):
+            self.require_auth(c)
+            return self.reply(200, catalog_status())
         if path == '/api/health' and method in ('GET','HEAD'):
             c.execute('SELECT 1')
             return self.reply(200, {'ok':True, 'version':VERSION})
@@ -423,6 +585,29 @@ class Handler(BaseHTTPRequestHandler):
         if method not in ('POST','PUT','DELETE'):
             raise APIError(404, '接口不存在')
         s = self.require_auth(c, mutation=True)
+        if path == '/api/catalog' and method == 'POST':
+            result = apply_catalog(force=True)
+            if not result.get('ok'):
+                raise APIError(400, result.get('error') or '目录数据无效')
+            return self.reply(200, {'ok':True, 'summary':result.get('summary'), 'status':catalog_status()})
+        if path == '/api/catalog/seed' and method == 'POST':
+            body = self.body(CATALOG_SEED_LIMIT, raw=True)
+            try:
+                document = json.loads(body.decode('utf-8'))
+                validate_overlay(document)
+            except (UnicodeError, ValueError) as error:
+                raise APIError(400, f'目录数据无效：{error}')
+            store_overlay(body)
+            result = apply_catalog(force=True)
+            if not result.get('ok'):
+                raise APIError(400, result.get('error') or '目录数据无效')
+            return self.reply(200, {'ok':True, 'summary':result.get('summary'), 'status':catalog_status()})
+        if path == '/api/catalog/seed' and method == 'DELETE':
+            remove_overlay()
+            result = apply_catalog(force=True)
+            if not result.get('ok'):
+                raise APIError(400, result.get('error') or '目录数据无效')
+            return self.reply(200, {'ok':True, 'summary':result.get('summary'), 'status':catalog_status()})
         if path == '/api/logout' and method == 'POST':
             if self.headers.get('Content-Length') not in (None, '0'):
                 self.body()
@@ -708,7 +893,7 @@ if __name__=='__main__':
             raise SystemExit('Catalog sync requires an initialized database; start the service first.')
         if any(x!='--publish-existing' for x in sys.argv[2:]):
             raise SystemExit('Usage: app.py sync-catalog [--publish-existing]')
-        seed=json.loads((ROOT/'seed.json').read_text())
+        seed=load_catalog()
         with db() as c:
             c.execute('BEGIN IMMEDIATE')
             result=catalog.sync(c,seed,link_fields,publish_existing='--publish-existing' in sys.argv[2:])

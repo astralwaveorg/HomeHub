@@ -1949,7 +1949,116 @@
       );
     });
     backup.append(importForm);
-    panel.append(profileSection, section, backup);
+    const catalogSection = el("section", "settings-section");
+    catalogSection.append(
+      el("h3", "", "目录数据（seed.json 热加载）"),
+      el(
+        "p",
+        "hint",
+        '在这个面板上传只包含新增或修改条目的 seed.json，门户会与内置目录合并并立即生效；直接改 NAS 上的 data/seed.json 也会在刷新后自动应用，不必重新发布版本。条目用 catalog_key 识别，分类可以写 "category_key": "category:music"。移除自定义目录不会删除已经进入门户的服务。',
+      ),
+    );
+    const catalogStatus = el("div", "catalog-status");
+    const catalogError = el("p", "form-error");
+    catalogError.setAttribute("role", "alert");
+    async function loadCatalogStatus() {
+      catalogError.textContent = "";
+      try {
+        const status = await api("/api/catalog");
+        const parts = [
+          status.overlay ? "来源：data/seed.json + 内置目录" : "来源：内置目录",
+          status.total == null ? null : `服务条目 ${status.total}`,
+          status.appliedAt
+            ? `上次应用 ${new Date(status.appliedAt * 1000).toLocaleString()}`
+            : null,
+          status.pending ? "有改动待应用" : null,
+        ].filter(Boolean);
+        catalogStatus.textContent = parts.join(" · ");
+        if (status.error) {
+          catalogError.textContent = `目录未应用：${status.error}`;
+          catalogStatus.classList.add("is-error");
+        } else catalogStatus.classList.remove("is-error");
+        removeCatalogButton.hidden = !status.overlay;
+      } catch (error) {
+        catalogError.textContent = error.message;
+      }
+    }
+    const catalogUpload = el("form", "catalog-upload");
+    const catalogLabel = el("label", "field");
+    catalogLabel.append(el("span", "", "上传 seed.json（最多 1 MiB）"));
+    const catalogFile = el("input");
+    catalogFile.id = "catalog-seed-file";
+    catalogFile.type = "file";
+    catalogFile.accept = ".json,application/json";
+    catalogFile.required = true;
+    catalogLabel.append(catalogFile);
+    const catalogUploadButton = button("上传并应用", "button primary");
+    catalogUploadButton.type = "submit";
+    catalogUpload.append(catalogLabel, catalogUploadButton);
+    bindForm(catalogUpload, catalogUploadButton, async () => {
+      const selected = catalogFile.files[0];
+      if (!selected) throw new Error("请选择 seed.json。");
+      if (selected.size > 1024 * 1024)
+        throw new Error("目录文件过大（最多 1 MiB）。");
+      let payload;
+      try {
+        payload = JSON.parse(await selected.text());
+      } catch {
+        throw new Error("无法解析 JSON，请检查文件内容。");
+      }
+      if (
+        !payload ||
+        typeof payload !== "object" ||
+        !Array.isArray(payload.categories) ||
+        !Array.isArray(payload.links)
+      )
+        throw new Error("目录文件必须包含 categories 和 links 数组。");
+      const result = await api("/api/catalog/seed", {
+        method: "POST",
+        body: selected,
+      });
+      await refresh();
+      const summary = result.summary || {};
+      toast(
+        `目录已应用：新增 ${summary.added || 0}、改名 ${summary.renamed || 0}、跳过 ${summary.skippedDeleted || 0}`,
+      );
+    });
+    const resyncButton = button("立即重新同步", "button", async () => {
+      resyncButton.disabled = true;
+      try {
+        const result = await api("/api/catalog", { method: "POST" });
+        const summary = result.summary || {};
+        toast(
+          `已重新同步：新增 ${summary.added || 0}、改名 ${summary.renamed || 0}、跳过 ${summary.skippedDeleted || 0}`,
+        );
+        await refresh();
+      } catch (error) {
+        catalogError.textContent = error.message;
+      } finally {
+        resyncButton.disabled = false;
+      }
+    });
+    const removeCatalogButton = button("移除自定义目录", "button danger", () =>
+      confirmAction(
+        "移除自定义目录",
+        "将删除 NAS data/seed.json（保留 .bak 备份）并回到内置目录；已经进入门户的服务仍会保留，可在服务列表里自行删除。",
+        async () => {
+          await api("/api/catalog/seed", { method: "DELETE" });
+          await refresh();
+          toast("已移除自定义目录");
+        },
+      ),
+    );
+    const catalogActions = el("div", "catalog-actions");
+    catalogActions.append(resyncButton, removeCatalogButton);
+    catalogSection.append(
+      catalogStatus,
+      catalogError,
+      catalogUpload,
+      catalogActions,
+    );
+    loadCatalogStatus();
+    panel.append(profileSection, section, catalogSection, backup);
   }
   load();
 })();

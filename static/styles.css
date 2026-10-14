@@ -1069,6 +1069,21 @@ input:focus-visible {
   font-weight: 500;
   margin: 0 0 15px;
 }
+.catalog-status {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.65;
+  margin: 0 0 10px;
+}
+.catalog-status.is-error {
+  color: #f0a3a3;
+}
+.catalog-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
 dialog {
   border: 1px solid #a999bd50;
   border-radius: 20px;

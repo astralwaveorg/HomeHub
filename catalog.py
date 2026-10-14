@@ -43,11 +43,70 @@ def validate_seed(seed):
         ids.add(item['id']); keys.add(item['catalog_key'])
     keys.clear()
     for item in seed['links']:
-        if item.get('category_id') not in ids or not valid_key(item.get('catalog_key')) or item['catalog_key'] in keys or item.get('url') in urls:
+        # A link may address a category of the same document by numeric id, or any
+        # category by durable key (used by external overlay documents).
+        placed = item.get('category_id') in ids or valid_key(item.get('category_key'))
+        if not placed or not valid_key(item.get('catalog_key')) or item['catalog_key'] in keys or item.get('url') in urls:
             raise ValueError('Catalog links need valid categories and unique keys/URLs')
         if not isinstance(item.get('legacy_names', []), list) or any(not isinstance(x, str) for x in item.get('legacy_names', [])):
             raise ValueError('Legacy names must be a string list')
         keys.add(item['catalog_key']); urls.add(item.get('url'))
+
+
+def merge(base, extra=None):
+    """Union two catalogs by durable key; `extra` wins conflicts.
+
+    Category ids are renumbered in the result, and every link is resolved to the
+    numeric id of the merged category it belongs to, so an external overlay can
+    add or change single services without restating the whole catalog.
+    """
+    rows, order = {}, []
+    for source, override in ((base, False), (extra, True)):
+        if not source:
+            continue
+        for item in source['categories']:
+            key = item['catalog_key']
+            if key not in rows:
+                rows[key] = {'name': item['name'], 'rank': item['rank']}
+                order.append(key)
+            elif override:
+                rows[key] = {'name': item['name'], 'rank': item['rank']}
+    ids = {key: index + 1 for index, key in enumerate(order)}
+    chosen, link_order = {}, []
+    for source, override in ((base, False), (extra, True)):
+        if not source:
+            continue
+        local = {item['id']: ids[item['catalog_key']] for item in source['categories']}
+        for item in source['links']:
+            key = item['catalog_key']
+            if 'category_key' in item and item['category_key'] is not None:
+                if item['category_key'] not in ids:
+                    raise ValueError(f"Catalog link {key} references unknown category {item['category_key']}")
+                category_id = ids[item['category_key']]
+            else:
+                category_id = local[item['category_id']]
+            resolved = dict(item, category_id=category_id)
+            resolved.pop('category_key', None)
+            if key not in chosen:
+                chosen[key] = resolved
+                link_order.append(key)
+            elif override:
+                chosen[key] = resolved
+    links, seen = [], set()
+    for key in reversed(link_order):  # a URL claimed twice keeps the overlay entry
+        item = chosen[key]
+        if item['url'] in seen:
+            continue
+        seen.add(item['url'])
+        links.append(item)
+    links.reverse()
+    merged = {
+        'settings': {**(base.get('settings') or {}), **((extra or {}).get('settings') or {})},
+        'categories': [{'id': ids[key], 'name': rows[key]['name'], 'rank': rows[key]['rank'], 'catalog_key': key} for key in order],
+        'links': links,
+    }
+    validate_seed(merged)
+    return merged
 
 
 def sync(c, seed, link_fields, publish_existing=False):
