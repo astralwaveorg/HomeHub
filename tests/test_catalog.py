@@ -16,6 +16,14 @@ import catalog
 SEED = json.loads((ROOT/'seed.json').read_text())
 OLD = json.loads((ROOT/'tests/fixtures/catalog-v1.0.0.json').read_text())
 
+# Services decommissioned after v1.0.0. The legacy fixture still contains them, so an
+# upgraded database keeps those rows: sync never deletes rows and the owner removes them in
+# the admin UI. Counts below account for those lingering rows.
+#  - website:mtag: Music Tag Web was deleted from the NAS on 2026-10-23.
+#  - app:fnmessagebot: measured on 2026-10-30, FnMessageBot listens on the NAS loopback
+#    interface only (127.0.0.1:18230) and is unreachable from every client device.
+RETIRED_URLS={'https://mtag.homehub.stream:8443/','http://10.0.1.2:18230/'}
+
 
 class CatalogTests(unittest.TestCase):
     def setUp(self):
@@ -126,7 +134,7 @@ class CatalogTests(unittest.TestCase):
     def test_legacy_upgrade_and_explicit_publication_preserve_owner(self):
         self.old_database();before=self.snapshot_auth_settings()
         result=self.sync(publish=True)
-        self.assertEqual(result['added'],len(SEED['links'])-len(OLD['links']))
+        self.assertEqual(result['added'],len(SEED['links'])-len(OLD['links'])+len(RETIRED_URLS))
         self.assertEqual(result['public'],len(SEED['links']))
         self.assertEqual(self.snapshot_auth_settings(),before)
         self.assertFalse((self.app.DATA/'initial-admin-password').exists())
@@ -165,7 +173,7 @@ class CatalogTests(unittest.TestCase):
         p=subprocess.run([sys.executable,str(ROOT/'app.py'),'sync-catalog','--publish-existing'],env=self.env,capture_output=True,text=True)
         self.assertEqual(p.returncode,0,p.stderr)
         result=json.loads(p.stdout)
-        self.assertEqual(result['total'],len(SEED['links']))
+        self.assertEqual(result['total'],len(SEED['links'])+len(RETIRED_URLS))
         self.assertEqual(self.snapshot_auth_settings(),before)
         self.assertFalse((self.app.DATA/'initial-admin-password').exists())
 
@@ -176,7 +184,7 @@ class CatalogTests(unittest.TestCase):
         broken['links'].append(extra)
         with self.assertRaises(self.app.APIError):self.sync(seed=broken)
         with self.app.db() as c:
-            self.assertEqual(c.execute('SELECT count(*) FROM links').fetchone()[0],len(SEED['links']))
+            self.assertEqual(c.execute('SELECT count(*) FROM links').fetchone()[0],len(SEED['links'])+len(RETIRED_URLS))
             self.assertFalse(c.execute("SELECT 1 FROM catalog_registry WHERE key='test:new'").fetchone())
 
     def test_removed_category_and_defaults_are_not_revived(self):
@@ -212,12 +220,14 @@ class CatalogTests(unittest.TestCase):
 
     def test_seed_coverage_and_native_launch_modes(self):
         catalog.validate_seed(SEED)
-        self.assertEqual(len(SEED['links']),42)
+        self.assertEqual(len(SEED['links']),49)
         self.assertTrue(all(x['visibility']=='public' for x in SEED['links']))
-        self.assertEqual(sum(x.get('launch_mode')=='fnos' for x in SEED['links']),5)
+        self.assertEqual(sum(x.get('launch_mode')=='fnos' for x in SEED['links']),8)
         self.assertIn('website:musicbrainz', {x['catalog_key'] for x in SEED['links']})
         old_urls={x['url'] for x in OLD['links']}
-        self.assertTrue(old_urls.issubset({x['url'] for x in SEED['links']}))
+        seed_urls={x['url'] for x in SEED['links']}
+        self.assertEqual(old_urls-seed_urls,RETIRED_URLS)
+        self.assertTrue((old_urls-RETIRED_URLS).issubset(seed_urls))
 
 
 if __name__=='__main__':unittest.main()

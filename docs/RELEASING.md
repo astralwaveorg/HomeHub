@@ -2,7 +2,7 @@
 
 ## Scope and development contract
 
-This is an independent Git repository; the initial `main` baseline is `e264e7c`, tagged `v1.0.0`. Current source release is **1.1.1**. Work on branches, run checks, review the diff, then let the repository owner commit/merge. Never commit live data, `.env`, credentials, passwords, screenshots or backups. No remote repository, push, NAS deployment or password operation is performed by merely adding these scripts.
+This is an independent Git repository; the initial `main` baseline is `e264e7c`, tagged `v1.0.0`. Current source release is **1.7.0**. Work on branches, run checks, review the diff, then let the repository owner commit/merge. Never commit live data, `.env`, credentials, passwords, screenshots or backups. No remote repository, push, NAS deployment or password operation is performed by merely adding these scripts.
 
 From the repository root:
 
@@ -18,10 +18,10 @@ Python 3.12+ and Node.js are local/CI prerequisites; application runtime is stdl
 First the owner commits the reviewed changes (scripts do **not** commit). Then:
 
 ```sh
-python3 scripts/release.py package --output /tmp/homehub-release-1.1.1
-# Prints /tmp/homehub-release-1.1.1/homehub-1.1.1-<fullcommit>.tar.json
+python3 scripts/release.py package --output /tmp/homehub-release-1.7.0
+# Prints /tmp/homehub-release-1.7.0/homehub-1.7.0-<fullcommit>.tar.json
 python3 scripts/release.py deploy \
-  --manifest /tmp/homehub-release-1.1.1/homehub-1.1.1-<fullcommit>.tar.json \
+  --manifest /tmp/homehub-release-1.7.0/homehub-1.7.0-<fullcommit>.tar.json \
   --dry-run
 ```
 
@@ -29,7 +29,7 @@ Replace `<fullcommit>` with the printed filename. Dry-run verifies local artifac
 
 ```sh
 python3 scripts/release.py deploy \
-  --manifest /tmp/homehub-release-1.1.1/homehub-1.1.1-<fullcommit>.tar.json
+  --manifest /tmp/homehub-release-1.7.0/homehub-1.7.0-<fullcommit>.tar.json
 ```
 
 **Normal releases omit `--publish-existing`.** The flag was used for the owner's approved one-time publication in 1.1.0; any later use needs fresh explicit approval. Their `sync-catalog` adds missing defaults and respects existing edits, visibility, names and catalog tombstones. The one-time option is an explicit content change, not a generic deployment default. Catalog migration must stay backward-compatible with retained older images. A code rollback does not undo a successful catalog change.

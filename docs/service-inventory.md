@@ -2,6 +2,16 @@
 
 ## Scope and evidence
 
+> ⚠️ **This is a point-in-time audit observed 2026-10-12.** It is a historical record, not a live status page.
+> **Current state**: 2026-10-30 re-verified on NAS — 27 reverse-proxy site files, 26 containers, 40 installed fnOS apps, **49 catalog entries**.
+> **Changes since this audit** (all re-verified 2026-10-23):
+> - `music-tag-web` container and stack directory **deleted**; the `mtag.homehub.stream` reverse-proxy site is **gone**. **2026-10-23 cleanup completed**: the Cloudflare DNS record was deleted and the `website:mtag` catalog entry was removed from both `seed.json` and the production DB (the `catalog_registry` tombstone is kept so a future sync cannot revive it). The portal now serves 41 entries.
+> - New sites added after the audit: `lyra.homehub.stream` (Lyra, → `127.0.0.1:48004`), `magichub.top` + `www.magichub.top` (MagicPanel, → `127.0.0.1:47100`), `mb.homehub.stream` (MusicBrainz, → `127.0.0.1:48003`), `love.homehub.stream` (Lovespace, → `127.0.0.1:1314`).
+> - Container count rose from 15 to 26 (added `magicpanel`, `magicpanel-backup`, `lyra`, `lyra-watch`, `lyra-netease-api`, `netease-probe`, standalone `redis`, and the 5 MusicBrainz containers).
+> - The live domain/backend mapping is maintained in `../../SERVICES.md` — read that for current truth.
+>
+> **2026-10-30 catalog calibration** (verified live: 26/26 public domains responded; every upstream port probed on NAS): catalog 41 → 49. Added Songloft (`song.`), Lyra (`lyra.`), 道理鱼音乐 (`melodex.` → daoliyu.music `:42780`), MagicPanel (`magichub.top`), Music Free (`:14533` direct) and Bark (`:28080` direct), plus fnOS-launch entries for the App-Store apps 音乐数据刮削 (music-meta-web), LyraNest 律巢 (lyranest) and 风扇控制 (niufan). Removed 通知管理 FnMessageBot (`app:fnmessagebot`) — measured listening on NAS loopback only (`127.0.0.1:18230`), unreachable from client devices. Gitea (native app, `:8418`), MinIO (native app, `:9001`), OpenList (`:45015`), Lovespace (`:1314`), the custom photo site (`:2343`) and fnOS WebDAV (`:5005`) are native fnOS services, not containers — alive and retained.
+
 Observed 2026-10-12 from NAS through strict-host-key, BatchMode SSH. This report is a sanitized point-in-time audit, not an uptime or authenticated functional test. No NAS/router/application/frontend changes were made. Only container names, published ports, project/network-mode labels, manifest identity/UI launch fields, gateway location/proxy destinations and HTTP response classifications were extracted. No environment, credentials, full inspect or full sensitive configuration was exported.
 
 HTTP probes ran **on NAS**. HTTPS used HTTP/1.1, normal TLS verification and `--resolve <host>:8443:127.0.0.1`; therefore they verify the existing reverse proxy and certificate but **not public DNS, WAN reachability or a remote browser**. LAN URLs were requested on NAS using its LAN address, not from a second LAN host. All successful probes had curl exit 0. Refused candidate ports had curl exit 7/status 000 and are explicitly excluded. Redirects were initially measured without following; selected native redirects were subsequently followed.
@@ -47,7 +57,7 @@ Project names came from the Compose project label; host modes were verified with
 | moviepilot-db | moviepilot | Shared MoviePilot entry | Internal PostgreSQL, container 5432 not published, no independent UI/nav |
 | openresty | openresty | Shared 1Panel / all HTTPS routes | Host-mode reverse-proxy infrastructure on 8443/8880; no independent application UI/nav |
 | audiobookshelf | audiobookshelf | 有声书 `https://books.homehub.stream:8443/` | 200; 13378→80 |
-| music-tag-web | music-tag-web | 音乐标签 `https://mtag.homehub.stream:8443/` | 200; 48001→8002 |
+| music-tag-web | music-tag-web | ~~音乐标签 `https://mtag.homehub.stream:8443/`~~ | ❌ **已彻底下线**（2026-10-23）：容器、堆栈目录、1Panel 站点、Cloudflare DNS 记录、目录条目全部清除 |
 | vertex | vertex | Vertex `https://vt.homehub.stream:8443/` | 302; 51015→51015; retained network name dockge-bridge does **not** mean Dockge installed |
 | miair-next | miair-next | 音箱投送 `http://10.0.1.2:48320/` | 200; host-mode; LAN discovery/casting not made WAN-capable by a directory link |
 | vaultwarden | vaultwarden | 密码库 `https://vault.homehub.stream:8443/` | 200; 40031→80; 3012 auxiliary transport not separate nav |

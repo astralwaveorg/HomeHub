@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.7.0
+
+- 目录全面校准（2026-10-30 在 NAS 上实测完成）：对照全部 26 个容器、27 个 OpenResty 站点、40 个飞牛应用与每条目录链接的 HTTP 探测，内置目录 41 → **49 个入口**。新增 9 个：Songloft（`song.homehub.stream`）、Lyra（`lyra.homehub.stream`）、道理鱼音乐（`melodex.homehub.stream`）、MagicPanel（`magichub.top`）、Music Free 与 Bark 推送（内网直连 14533 / 28080）、应用商店的「音乐数据刮削」（music-meta-web）、「LyraNest 律巢」（lyranest）与「风扇控制」（niufan，走飞牛启动）。
+- 移除 1 个失效条目：通知管理 FnMessageBot（`app:fnmessagebot`）——实测其服务已改为仅监听 NAS 回环地址（127.0.0.1:18230），从任何客户端设备都无法打开；`seed.json` 同步移除，生产库对应行在发布后删除，`catalog_registry` 记录保留。
+- 复核确认所有保留条目存活：Gitea（8418）、MinIO（9001）、OpenList（45015）、情侣小站（1314）、相册（2343）、WebDAV（5005）等均为飞牛原生应用而非容器，与文档旧印象不同但服务正常；另有 26 个公网域名全部响应正常。`tests/test_catalog.py` 的 `RETIRED_URLS` 增加 FnMessageBot，目录计数与「飞牛启动」断言更新为 49 / 8。
+- 下线 Music Tag Web（服务本体已于 2026-10-23 删除）：`seed.json` 移除 `website:mtag` 条目。生产库的对应行已删除，但 `catalog_registry` 中的 `link|website:mtag` 记录**刻意保留**——它充当"已删除"标记，使后续目录同步不会把该条目复活（与 UI 中手动删除入口的行为一致）。
+- `tests/test_catalog.py` 的目录计数断言改为不硬编码总数：新增 `RETIRED_URLS` 集合表达"v1.0.0 之后下线、但历史 fixture 仍包含"的服务，计数相应加上该集合长度。旧库升级后这些行不会被自动删除（homehub 不自动删所有者数据），断言必须体现这一点。
+
 ## 1.6.0
 
 - 目录数据支持热加载：可选的 NAS `data/seed.json` 与内置 `seed.json` 按键（`catalog_key`）合并后同步，文件保存或浏览器上传后约 1 秒内自动生效，不必重新打包发布；合并始终为增量，已有服务的名称 / 地址 / 图标 / 可见性 / 删除决定不被覆盖或复活。
