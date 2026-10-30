@@ -1,16 +1,22 @@
 name: homehub
 services:
   homehub:
-    image: ${HOMEHUB_IMAGE:-homehub-portal:1.6.0}
+    # 发布工具会把这一行改写为不可变标签 `homehub-portal:<版本>-<Git commit>`；
+    # 手动部署时也可用 .env 里的 HOMEHUB_IMAGE 覆盖（复制 .env.example 开始）。
+    image: ${HOMEHUB_IMAGE:-homehub-portal:1.7.0}
     build: .
     container_name: homehub
     user: "1000:1000"
     restart: unless-stopped
     ports:
+      # 仅回环监听：HTTPS 反向代理（如 OpenResty / Caddy / Nginx）负责对外 TLS。
+      # 如需直接暴露，请自行修改并理解 HOMEHUB_ORIGIN / HOMEHUB_COOKIE_SECURE 的含义。
       - "127.0.0.1:48080:8080"
     environment:
-      HOMEHUB_ORIGIN: "https://homehub.stream:8443"
-      HOMEHUB_COOKIE_SECURE: "true"
+      # 必须与浏览器实际访问的对外源（scheme + 域名 + 端口）完全一致，用于跨站防护。
+      HOMEHUB_ORIGIN: ${HOMEHUB_ORIGIN:-https://homehub.stream:8443}
+      # 生产必须为 true（Secure Cookie）。仅 HTTP 本地预览时可置 false。
+      HOMEHUB_COOKIE_SECURE: ${HOMEHUB_COOKIE_SECURE:-true}
       HOMEHUB_DATA: /data
     volumes:
       - ./data:/data

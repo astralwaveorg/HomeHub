@@ -12,3 +12,6 @@ initial-admin-password
 node_modules/
 .venv/
 .DS_Store
+.release.lock
+*.release-tmp
+seed.json.bak
