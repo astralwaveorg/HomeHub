@@ -151,6 +151,18 @@ input:focus-visible {
     transform: translate(-7%, 12%) rotate(-16deg) scale(1.15);
   }
 }
+@keyframes page-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+}
+/* 站内路由切换的轻入场：只动 opacity/transform，仍受静谧与 reduced-motion 约束。 */
+main.portal-page,
+main.nav-page,
+main.admin-page {
+  animation: page-in 0.26s ease-out;
+}
 .header {
   height: 92px;
   max-width: 1320px;
@@ -292,6 +304,7 @@ input:focus-visible {
   line-height: 1.2;
   letter-spacing: 4px;
   margin: 18px 0 14px;
+  text-wrap: balance;
   background: linear-gradient(115deg, #fff7ee, #e2daf5 60%, #cfb3df);
   -webkit-background-clip: text;
   background-clip: text;
@@ -1241,8 +1254,9 @@ dialog::backdrop {
     letter-spacing: 2.5px;
   }
   .hero h1 {
-    font-size: 35px;
-    letter-spacing: 1px;
+    /* 13 个全角字形（标语）在 320–650px 都要单行放下：6.6vw ≈ 可用宽度/13。 */
+    font-size: clamp(20px, 6.6vw, 30px);
+    letter-spacing: 0.5px;
     margin: 18px 0 13px;
   }
   .hero p {

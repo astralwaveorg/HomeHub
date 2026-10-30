@@ -3,7 +3,7 @@ services:
   homehub:
     # 发布工具会把这一行改写为不可变标签 `homehub-portal:<版本>-<Git commit>`；
     # 手动部署时也可用 .env 里的 HOMEHUB_IMAGE 覆盖（复制 .env.example 开始）。
-    image: ${HOMEHUB_IMAGE:-homehub-portal:1.7.0}
+    image: ${HOMEHUB_IMAGE:-homehub-portal:1.8.0}
     build: .
     container_name: homehub
     user: "1000:1000"

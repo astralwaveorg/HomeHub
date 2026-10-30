@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.8.0
+
+- 以 **MIT** 许可证开源（新增 `LICENSE`），README 许可证节同步；仓库已发布到 `github.com/astralwaveorg/HomeHub`。
+- 修复顶栏品牌文案：模板里一个多余的 `>` 字符导致页面渲染出「> Home Hub」，现正确显示「Homehub」（同时统一拼写）。
+- 首页标语移动端不再折行：≤650px 时字号改为 `clamp(20px, 6.6vw, 30px)`（13 个全角字形在 320–650px 全部单行放下），并给 `.hero h1` 加 `text-wrap: balance`，更长的自定义标语也会均衡换行而不是留两三个字孤行。
+- 背景音乐状态文案去重：播放中只显示「正在播放」，不再把音乐标题重复一遍（标题就在上一行）。
+- 站内路由切换新增轻量入场动画（opacity/transform 合成器动画，0.26s；静谧模式与 `prefers-reduced-motion` 自动禁用）。
+- 为 1.7.0 新增的 9 个服务补齐官方图标（song/lyra/melodex/magicpanel/musicfree/bark/music-meta-web/lyranest/niufan），移除已退役 Music Tag Web 的图标映射与文件；图标清单现覆盖 35 个入口。
+
 ## 1.7.0
 
 - 目录全面校准（2026-10-30 在 NAS 上实测完成）：对照全部 26 个容器、27 个 OpenResty 站点、40 个飞牛应用与每条目录链接的 HTTP 探测，内置目录 41 → **49 个入口**。新增 9 个：Songloft（`song.homehub.stream`）、Lyra（`lyra.homehub.stream`）、道理鱼音乐（`melodex.homehub.stream`）、MagicPanel（`magichub.top`）、Music Free 与 Bark 推送（内网直连 14533 / 28080）、应用商店的「音乐数据刮削」（music-meta-web）、「LyraNest 律巢」（lyranest）与「风扇控制」（niufan，走飞牛启动）。

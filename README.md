@@ -88,7 +88,7 @@ python3 app.py admin-password
 | `HOMEHUB_COOKIE_SECURE` | `true` | Secure Cookie；仅 HTTP 本地预览时允许 `false` |
 | `HOMEHUB_DATA` | `/data`（容器） | 数据目录：SQLite、初始密码文件、上传的音乐与图标 |
 | `HOMEHUB_BIND` / `HOMEHUB_PORT` | `0.0.0.0` / `8080` | 直接运行 `app.py` 时的监听地址/端口 |
-| `HOMEHUB_IMAGE` | `homehub-portal:1.7.0` | Compose 镜像标签；发布工具会固定为 `<版本>-<Git commit>` 不可变标签 |
+| `HOMEHUB_IMAGE` | `homehub-portal:1.8.0` | Compose 镜像标签；发布工具会固定为 `<版本>-<Git commit>` 不可变标签 |
 
 ## 生产部署
 
@@ -224,11 +224,11 @@ npx --yes prettier@3.6.2 --write static/app.js static/styles.css static/index.ht
 
 ## 许可证
 
-仓库当前公开但**尚未附加开源许可证**：在许可证确定之前，默认保留所有权利，请勿直接复用代码。作者计划随后补充正式许可证（如 MIT/Apache-2.0），届时本节与 [`LICENSE`](LICENSE) 会一并更新。
+代码以 [MIT](LICENSE) 许可证开源。内置氛围音「无界」（`ambient.wav`）为作者自制作品，随仓库同许可分发；`static/icons/` 中的服务品牌图标仅用于标识对应服务的导航用途，版权归各自所有者。部署后你上传的音乐、图标与目录数据归你自己所有，不属于本仓库。
 
 ## 相关文档
 
-- [CHANGELOG.md](CHANGELOG.md) — 版本历史（当前 1.7.0，2026-10-30 目录校准）
+- [CHANGELOG.md](CHANGELOG.md) — 版本历史（当前 1.8.0）
 - [docs/RELEASING.md](docs/RELEASING.md) — 发布工程与回滚
 - [docs/catalog.md](docs/catalog.md) — 目录与热加载
 - [docs/icon-management.md](docs/icon-management.md) — 图标管理
