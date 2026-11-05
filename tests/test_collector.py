@@ -121,21 +121,31 @@ class ReaderTests(unittest.TestCase):
         self.assertEqual(second['eth0']['rx'], 1000 / collector.INTERVAL)
         self.assertEqual(second['eth0']['tx'], 1000 / collector.INTERVAL)
 
-    def test_container_usage_and_cpu_math(self):
-        raw = {'cpu_stats': {'cpu_usage': {'total_usage': 300}, 'system_cpu_usage': 1000,
-                             'online_cpus': 12},
-               'memory_stats': {'usage': 1000, 'limit': 8000, 'stats': {'inactive_file': 200}},
-               'networks': {'eth0': {'rx_bytes': 7, 'tx_bytes': 9}},
-               'blkio_stats': {'io_service_bytes_recursive': [{'op': 'Read', 'value': 30},
-                                                              {'op': 'Write', 'value': 40}]}}
-        usage = collector.container_usage(raw)
+    def test_cgroup_usage_and_cpu_math(self):
+        with tempfile.TemporaryDirectory() as cgroupdir:
+            base = Path(cgroupdir)
+            scope = base / 'system.slice' / ('docker-' + 'a' * 64 + '.scope')
+            scope.mkdir(parents=True)
+            (scope / 'cpu.stat').write_text('usage_usec 3000000\nuser_usec 1\nsystem_usec 2\n')
+            (scope / 'memory.current').write_text('1000\n')
+            (scope / 'memory.stat').write_text('anon 100\nfile 500\ninactive_file 200\n')
+            (scope / 'memory.max').write_text('8000\n')
+            (scope / 'io.stat').write_text('8:0 rbytes=30 wbytes=40 rios=1 wios=2\n')
+            with patch.object(collector, 'CGROUP_BASE', base):
+                usage = collector.cgroup_usage('a' * 64)
+        self.assertEqual(usage['cpu_usec'], 3000000.0)
         self.assertEqual(usage['mem'], 800)
-        self.assertEqual(usage['rx'], 7)
+        self.assertEqual(usage['limit'], 8000.0)
         self.assertEqual(usage['blk_r'], 30)
-        before = dict(usage, total=100, system=500)
-        self.assertEqual(collector.cpu_percent(usage, before, 12), 480.0)
-        self.assertIsNone(collector.cpu_percent(dict(usage, system=5), before, 12))
-        self.assertIsNone(collector.container_usage(None))
+        self.assertEqual(usage['blk_w'], 40)
+        self.assertIsNone(collector.cgroup_usage('b' * 64))
+        now = dict(usage)
+        before = dict(usage, cpu_usec=1000000.0)
+        # 2e6 usec over 1s on 12 cores = 2% of one core = 0.17% of the box... usec math:
+        # 2_000_000 / (1_000_000 * 12) * 100 = 16.67%
+        self.assertAlmostEqual(collector.cpu_percent(now, before, 12, 1.0), 16.67, delta=0.01)
+        self.assertIsNone(collector.cpu_percent(dict(now, cpu_usec=1), before, 12, 1.0))
+        self.assertIsNone(collector.cpu_percent(now, before, 12, 0))
 
 
 class StoreTests(unittest.TestCase):

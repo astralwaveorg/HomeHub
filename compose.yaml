@@ -55,9 +55,11 @@ services:
     environment:
       # 公网域名在 NAT 回环下往往探测失败；改走内网反代入口并保留原 Host 头。
       HOMEHUB_COLLECTOR_PROBE_VIA: 10.0.1.2:8443
+    cgroupns: host
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
       - /sys:/host/sys:ro
+      - /sys/fs/cgroup:/host/cgroup:ro
       - /:/host/root:ro
       - /vol1:/vol1:ro
       - /vol2:/vol2:ro

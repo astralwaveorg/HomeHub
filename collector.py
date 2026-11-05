@@ -8,7 +8,7 @@ keeps 1-minute rollups for dashboard history. The HTTP port is only reachable
 on the compose-internal network; the portal proxies and authenticates nothing
 here because the metrics themselves are public inside the LAN.
 """
-from collections import Counter, deque
+from collections import deque
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import hashlib
 import http.client
@@ -43,6 +43,10 @@ KEEP_RAW = 2 * 3600
 KEEP_MINUTES = 14 * 24 * 3600
 KEEP_PROBES = 3 * 24 * 3600
 DOCKER_API = '/v1.44'
+# Per-container counters come from the host cgroup tree (cgroup v2, systemd
+# scopes) instead of the docker stats API, whose one-shot endpoint proved
+# pathologically slow on this daemon.
+CGROUP_BASE = Path(os.environ.get('HOMEHUB_COLLECTOR_CGROUP', '/host/cgroup'))
 SECTOR = 512
 MAX_TARGETS = 200
 # Remote fleet: a small devices.json next to the DB describes the other boxes
@@ -91,6 +95,7 @@ class Sampler:
         self.prev_net = {}
         self.prev_io = {}
         self.prev_docker = {}
+        self.docker_at = None
         self.disk_map = {}
         self.disk_map_at = 0.0
         self.last = (None, [])
@@ -304,12 +309,14 @@ class Sampler:
             containers = json.loads(listing)
         except (OSError, ValueError, http.client.HTTPException) as error:
             return None, [], str(error)
-        running_ids = [(item.get('Id') or '')[:12] for item in containers if item.get('State') == 'running']
-        with_stats = docker_stats_many(running_ids)
+        now = time.time()
+        running = [item for item in containers if item.get('State') == 'running']
         result = []
-        totals = {'running': len(running_ids), 'total': len(containers), 'cpu': 0.0, 'mem': 0}
+        totals = {'running': len(running), 'total': len(containers), 'cpu': 0.0, 'mem': 0}
+        online = INFO.get('cpus') or os.cpu_count() or 1
         for item in containers:
-            one_id = (item.get('Id') or '')[:12]
+            full_id = item.get('Id') or ''
+            one_id = full_id[:12]
             entry = {'id': one_id, 'name': (item.get('Names') or [''])[0].lstrip('/'),
                      'image': item.get('Image', ''), 'state': item.get('State', 'unknown'),
                      'status': item.get('Status', ''), 'created': item.get('Created')}
@@ -324,22 +331,23 @@ class Sampler:
             elif 'starting' in status:
                 entry['health'] = 'starting'
             if entry['state'] == 'running':
-                raw = with_stats.get(one_id)
+                usage = cgroup_usage(full_id)
                 before = self.prev_docker.get(one_id)
-                usage = container_usage(raw)
+                elapsed = self.docker_at and max(1.0, now - self.docker_at) or None
                 if usage:
                     entry['mem'] = usage['mem']
                     entry['mem_limit'] = usage['limit']
-                    if before:
-                        entry['cpu'] = cpu_percent(usage, before, usage['online'])
-                        for key in ('rx', 'tx', 'blk_r', 'blk_w'):
+                    if before and elapsed:
+                        entry['cpu'] = cpu_percent(usage, before, online, elapsed)
+                        for key in ('blk_r', 'blk_w'):
                             if usage[key] is not None and before[key] is not None:
-                                entry[key] = round(max(0.0, (usage[key] - before[key]) / INTERVAL), 0)
+                                entry[key] = round(max(0.0, (usage[key] - before[key]) / elapsed), 0)
                     totals['cpu'] += entry.get('cpu') or 0
                     totals['mem'] += entry.get('mem') or 0
                 self.prev_docker[one_id] = usage
             result.append(entry)
-        live = set(running_ids)
+        self.docker_at = now
+        live = {item['Id'][:12] for item in running}
         for gone in [key for key in self.prev_docker if key not in live]:
             del self.prev_docker[gone]
         totals['cpu'] = round(totals['cpu'], 1)
@@ -425,71 +433,59 @@ def docker_request(method, path, timeout=8):
         connection.close()
 
 
-def docker_stats_many(ids):
-    """One-shot cgroup snapshots; cpu/rate math happens against our own history."""
-    result = {}
-    errors = Counter()
-
-    def fetch(one_id):
-        try:
-            raw = docker_request('GET', f'{DOCKER_API}/containers/{one_id}/stats?one-shot=1', timeout=6)
-            result[one_id] = json.loads(raw)
-        except (OSError, ValueError, http.client.HTTPException):
-            errors[one_id] += 1
-
-    workers = min(4, len(ids)) or 1
-    threads = []
-    queue = list(ids)
-    lock = threading.Lock()
-
-    def worker():
-        while True:
-            with lock:
-                if not queue:
-                    return
-                one_id = queue.pop()
-            fetch(one_id)
-
-    for _ in range(workers):
-        thread = threading.Thread(target=worker, daemon=True)
-        thread.start()
-        threads.append(thread)
-    for thread in threads:
-        thread.join(10)
-    return result
-
-
-def container_usage(raw):
-    """Flatten one one-shot stats payload into comparable counter values."""
-    if not raw:
+def cgroup_usage(container_id):
+    """Read one container's counters straight from its systemd cgroup scope."""
+    scope = CGROUP_BASE / 'system.slice' / f'docker-{container_id}.scope'
+    try:
+        cpu_text = (scope / 'cpu.stat').read_text()
+        mem_current = int((scope / 'memory.current').read_text().strip())
+    except (OSError, ValueError):
         return None
-    cpu = raw.get('cpu_stats') or {}
-    mem = raw.get('memory_stats') or {}
-    inner = mem.get('stats') or {}
-    cache = inner.get('inactive_file', inner.get('cache', 0)) or 0
-    usage = null_float(mem.get('usage'))
-    nets = raw.get('networks') or {}
-    blocks = raw.get('blkio_stats') or {}
-    ios = blocks.get('io_service_bytes_recursive') or []
-    return {'total': null_float((cpu.get('cpu_usage') or {}).get('total_usage')),
-            'system': null_float(cpu.get('system_cpu_usage')),
-            'online': null_float(cpu.get('online_cpus')) or os.cpu_count() or 1,
-            'mem': round(usage - cache) if usage is not None else None,
-            'limit': null_float(mem.get('limit')),
-            'rx': sum((one.get('rx_bytes') or 0) for one in nets.values()),
-            'tx': sum((one.get('tx_bytes') or 0) for one in nets.values()),
-            'blk_r': sum((one.get('value') or 0) for one in ios if str(one.get('op', '')).lower() == 'read'),
-            'blk_w': sum((one.get('value') or 0) for one in ios if str(one.get('op', '')).lower() == 'write')}
+    usage_usec = None
+    for line in cpu_text.splitlines():
+        if line.startswith('usage_usec'):
+            usage_usec = null_float(line.split()[1])
+            break
+    if usage_usec is None:
+        return None
+    mem_stat_text = ''
+    try:
+        mem_stat_text = (scope / 'memory.stat').read_text()
+    except OSError:
+        pass
+    inactive = 0
+    for line in mem_stat_text.splitlines():
+        if line.startswith('inactive_file '):
+            inactive = int(line.split()[1])
+            break
+    try:
+        mem_max = (scope / 'memory.max').read_text().strip()
+    except OSError:
+        mem_max = 'max'
+    read_bytes = write_bytes = 0
+    try:
+        for line in (scope / 'io.stat').read_text().splitlines():
+            for field in line.split()[1:]:
+                if field.startswith('rbytes='):
+                    read_bytes += int(field.split('=')[1])
+                elif field.startswith('wbytes='):
+                    write_bytes += int(field.split('=')[1])
+    except (OSError, ValueError, IndexError):
+        pass
+    return {'cpu_usec': usage_usec, 'mem': mem_current - inactive, 'mem_current': mem_current,
+            'limit': None if mem_max == 'max' else null_float(mem_max),
+            'blk_r': read_bytes, 'blk_w': write_bytes}
 
 
-def cpu_percent(now, before, online):
-    if None in (now['total'], before['total'], now['system'], before['system']):
+def cpu_percent(now, before, online, elapsed):
+    if not now or not before or elapsed <= 0:
         return None
-    total_delta = now['total'] - before['total']
-    system_delta = now['system'] - before['system']
-    if total_delta <= 0 or system_delta <= 0:
+    delta = now['cpu_usec'] - before['cpu_usec']
+    if delta <= 0:
         return None
-    return round(min(100 * online, 100 * total_delta / system_delta * online), 2)
+    # usage_usec counts every core; 100% of the box = elapsed * 1e6 * online.
+    capacity = elapsed * 1e6 * online
+    return round(min(100.0 * online, 100 * delta / capacity), 2)
 
 
 # ---- SQLite store ----------------------------------------------------------------
