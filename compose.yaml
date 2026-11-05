@@ -38,3 +38,40 @@ services:
       options:
         max-size: "10m"
         max-file: "3"
+  collector:
+    # 星轨观测站：与门户同镜像、不同入口；只读挂载宿主机计数器与 Docker socket。
+    # 无对外端口，仅在 compose 内网由门户代理；历史数据落在 ./data/collector。
+    image: ${HOMEHUB_IMAGE:-homehub-portal:1.8.0}
+    command: python /app/collector.py
+    container_name: homehub-collector
+    user: "0:0"
+    restart: unless-stopped
+    environment:
+      # 公网域名在 NAT 回环下往往探测失败；改走内网反代入口并保留原 Host 头。
+      HOMEHUB_COLLECTOR_PROBE_VIA: 10.0.1.2:8443
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - /sys:/host/sys:ro
+      - /:/host/root:ro
+      - /vol1:/vol1:ro
+      - /vol2:/vol2:ro
+      - /vol3:/vol3:ro
+      - ./data/collector:/data/collector
+    read_only: true
+    tmpfs:
+      - /tmp:size=16m,mode=1777
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    deploy:
+      resources:
+        limits:
+          cpus: "0.50"
+          memory: 384M
+          pids: 128
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"

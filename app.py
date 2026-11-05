@@ -18,7 +18,9 @@ import unicodedata
 from contextlib import contextmanager
 from http.cookies import SimpleCookie
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from urllib.parse import unquote, urlsplit
+from urllib.parse import parse_qs, quote, unquote, urlsplit
+import urllib.error
+import urllib.request
 import icon_library
 import catalog
 
@@ -37,6 +39,10 @@ MAX_BACKUP = 32 * 1024 * 1024
 MAX_AUDIO = 25 * 1024 * 1024
 AUTH_LOCK = threading.Lock()
 ATTEMPTS = {}
+# Orbit collector on the compose-internal network; metrics are LAN-public data.
+COLLECTOR = os.environ.get('HOMEHUB_COLLECTOR', 'http://collector:9100').rstrip('/')
+COLLECTOR_RANGES = {'1h', '6h', '24h', '7d', '14d'}
+PROBE_SYNC = {'last_error': 0.0}
 
 class APIError(Exception):
     def __init__(self, status, message):
@@ -235,6 +241,8 @@ def apply_catalog(force=False, publish_existing=False):
                    'source': str(overlay or base), 'overlay': bool(overlay),
                    'hash': hashlib.sha256(json.dumps(seed, ensure_ascii=False, sort_keys=True).encode()).hexdigest()[:16]}
         write_catalog_state(applied)
+        # New or renamed entries become probe targets; a stalled collector retries hourly.
+        push_probe_targets()
         return {'ok': True, 'changed': True, 'summary': summary, 'state': applied}
 
 
@@ -250,6 +258,71 @@ def maybe_apply_catalog():
             print('Catalog hot reload applied:', json.dumps(result['summary'], ensure_ascii=False), flush=True)
     except (OSError, sqlite3.Error, ValueError) as error:
         print('Catalog hot reload failed:', error, flush=True)
+
+
+def probe_targets(c):
+    """Every catalog entry becomes a probe target; keys stay stable."""
+    targets = []
+    for row in c.execute('SELECT id,name,url,catalog_key FROM links ORDER BY id'):
+        if not row['url']:
+            continue
+        targets.append({'key': row['catalog_key'] or 'l%d' % row['id'],
+                        'name': row['name'], 'url': row['url']})
+    return targets[:200]
+
+
+def push_probe_targets(force=False):
+    """Sync probe targets to the collector; failures retry on the next cycle."""
+    if not PROBE_SYNC.get('thread_started'):
+        return
+    try:
+        with db() as c:
+            targets = probe_targets(c)
+        payload = json.dumps({'targets': targets}).encode()
+        request = urllib.request.Request(COLLECTOR + '/targets', data=payload, method='PUT',
+                                         headers={'Content-Type': 'application/json'})
+        with urllib.request.urlopen(request, timeout=5) as response:
+            response.read()
+        PROBE_SYNC['last_error'] = 0.0
+    except (urllib.error.URLError, OSError, ValueError, sqlite3.Error) as error:
+        if force or time.monotonic() - PROBE_SYNC['last_error'] > 600:
+            print('Probe target sync failed:', type(error).__name__, flush=True)
+        PROBE_SYNC['last_error'] = time.monotonic()
+
+
+def probe_sync_loop():
+    """Reconcile targets hourly so the collector never drifts from the catalog."""
+    while True:
+        push_probe_targets()
+        time.sleep(3600)
+
+
+def collector_get(path, query=''):
+    """Proxy a read-only collector endpoint; no auth, metrics are LAN-public."""
+    params = parse_qs(query) if query else {}
+    device = params.get('device', [])
+    suffix = ''
+    if device:
+        if len(device) != 1 or not re.fullmatch(r'[A-Za-z0-9_.-]{1,40}', device[0].strip()):
+            raise APIError(400, '设备名称不正确')
+        suffix = '&device=' + quote(device[0].strip())
+    if query:
+        if path == '/history':
+            ranges = params.get('range', ['24h'])
+            if len(ranges) != 1 or ranges[0] not in COLLECTOR_RANGES:
+                raise APIError(400, '时间范围不支持')
+            query = '?range=' + ranges[0] + suffix
+            if params.get('container'):
+                if len(params['container']) != 1 or not params['container'][0].strip():
+                    raise APIError(400, '容器名称不正确')
+                query += '&container=' + quote(params['container'][0].strip()[:80])
+        else:
+            query = '?x=1' + suffix if suffix else ''
+    try:
+        with urllib.request.urlopen(COLLECTOR + path + query, timeout=10) as response:
+            return response.read()
+    except (urllib.error.URLError, urllib.error.HTTPError, OSError, TimeoutError):
+        raise APIError(503, '观测站暂时离线，采集器尚未就绪，请稍后刷新')
 
 
 def catalog_status():
@@ -409,6 +482,13 @@ class Handler(BaseHTTPRequestHandler):
         if self.command != 'HEAD':
             self.wfile.write(body)
 
+    def reply_bytes(self, status, body):
+        self.send_response(status)
+        self.common_headers('application/json; charset=utf-8', len(body))
+        self.end_headers()
+        if self.command != 'HEAD':
+            self.wfile.write(body)
+
     def body(self, limit=MAX_JSON, raw=False):
         try:
             length = int(self.headers.get('Content-Length', '-1'))
@@ -552,6 +632,10 @@ class Handler(BaseHTTPRequestHandler):
         if path == '/api/health' and method in ('GET','HEAD'):
             c.execute('SELECT 1')
             return self.reply(200, {'ok':True, 'version':VERSION})
+        if path == '/api/metrics/snapshot' and method in ('GET','HEAD'):
+            return self.reply_bytes(200, collector_get('/snapshot', urlsplit(self.path).query))
+        if path == '/api/metrics/history' and method in ('GET','HEAD'):
+            return self.reply_bytes(200, collector_get('/history', urlsplit(self.path).query))
         if path == '/api/login' and method == 'POST':
             self.origin_check()
             v = self.body()
@@ -820,7 +904,7 @@ class Handler(BaseHTTPRequestHandler):
         c.commit();return self.reply(200,{'ok':True})
 
     def static(self,path):
-        if path in ('/','/nav','/admin','/nav/','/admin/'):
+        if path in ('/','/nav','/admin','/monitor','/nav/','/admin/'):
             p=STATIC/'index.html'
             content_type='text/html; charset=utf-8'
         elif path.startswith('/assets/'):
@@ -928,5 +1012,7 @@ if __name__=='__main__':
         print(f'账户 {username} 已创建，权限与管理员一致。')
     elif cmd=='serve':
         print('Homehub listening on :8080',flush=True)
+        PROBE_SYNC['thread_started'] = True
+        threading.Thread(target=probe_sync_loop, daemon=True, name='probe-sync').start()
         Server((os.environ.get('HOMEHUB_BIND','0.0.0.0'),int(os.environ.get('HOMEHUB_PORT','8080'))),Handler).serve_forever()
     else:raise SystemExit('Unknown command')

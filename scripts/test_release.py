@@ -28,15 +28,25 @@ class ReleaseTests(unittest.TestCase):
         for name in ('data/homehub.db', '.env', '.git/config', 'tests/screenshots/a.png', '../app.py', '/app.py', 'static/../../data/x'):
             self.assertFalse(release.allowed(name), name)
             self.assertFalse(remote.runtime(name), name)
-        for name in ('app.py', 'VERSION', 'static/app.js'):
+        for name in ('app.py', 'collector.py', 'VERSION', 'static/app.js'):
             self.assertTrue(release.allowed(name)); self.assertTrue(remote.runtime(name))
         self.assertFalse(remote.runtime('scripts/release.py'))
 
     def test_compose_pin(self):
-        original = b'name: homehub\nservices:\n  homehub:\n    image: homehub-portal:1.0.0\n'
-        pinned = remote.pin_compose(original, 'homehub-portal:retained-123456789abcdef0')
-        self.assertIn(b'${HOMEHUB_IMAGE:-homehub-portal:retained-', pinned)
+        single = b'name: homehub\nservices:\n  homehub:\n    image: homehub-portal:1.0.0\n'
+        pinned = remote.pin_compose(single, 'homehub-portal:retained-123456789abcdef0')
+        self.assertEqual(pinned.count(b'${HOMEHUB_IMAGE:-homehub-portal:retained-'), 1)
+        twin = b'name: homehub\nservices:\n  homehub:\n    image: a\n  collector:\n    image: b\n'
+        pinned = remote.pin_compose(twin, 'homehub-portal:retained-123456789abcdef0')
+        self.assertEqual(pinned.count(b'${HOMEHUB_IMAGE:-homehub-portal:retained-'), 2)
         with self.assertRaises(ValueError): remote.pin_compose(b'no image', 'x')
+
+    def test_deploy_requires_both_services(self):
+        one = b'name: homehub\nservices:\n  homehub:\n    image: a\n'
+        two = b'name: homehub\nservices:\n  homehub:\n    image: a\n  collector:\n    image: b\n'
+        import re as re_module
+        self.assertEqual(len(re_module.findall(r'(?m)^    image:', two.decode())), 2)
+        self.assertNotEqual(len(re_module.findall(r'(?m)^    image:', one.decode())), 2)
 
     def test_safe_paths(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -143,7 +153,8 @@ class RemoteTransactionTests(unittest.TestCase):
             archive = io.BytesIO()
             with tarfile.open(fileobj=archive, mode='w') as tf:
                 for name in remote.RUNTIME:
-                    data = b'services:\n  homehub:\n    image: test\n' if name == 'compose.yaml' else b'new runtime'
+                    data = (b'services:\n  homehub:\n    image: test\n  collector:\n    image: test\n'
+                            if name == 'compose.yaml' else b'new runtime')
                     info = tarfile.TarInfo(name); info.size = len(data); tf.addfile(info, io.BytesIO(data))
             payload = archive.getvalue(); (stage / 'archive.tar').write_bytes(payload)
             (stage / 'manifest.json').write_text(json.dumps({'revision': revision, 'version': '1.1.0', 'sha256': hashlib.sha256(payload).hexdigest()}))

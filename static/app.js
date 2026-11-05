@@ -262,6 +262,7 @@
     state.query = "";
     state.category = "";
     state.favoritesOnly = false;
+    clearOrbitTimers();
     if (location.pathname !== path) history.pushState({}, "", path);
     if (dialog.open) dialog.close();
     render();
@@ -285,7 +286,7 @@
     const url = new URL(anchor.href, location.origin);
     if (
       url.origin === location.origin &&
-      ["/", "/nav", "/admin"].includes(url.pathname) &&
+      ["/", "/nav", "/admin", "/monitor"].includes(url.pathname) &&
       !url.hash
     ) {
       event.preventDefault();
@@ -297,6 +298,7 @@
     state.query = "";
     state.category = "";
     state.favoritesOnly = false;
+    clearOrbitTimers();
     if (dialog.open) dialog.close();
     render();
   });
@@ -837,6 +839,7 @@
     }
     if (state.route === "/admin") admin();
     else if (state.route === "/nav") navigation();
+    else if (state.route === "/monitor") orbit();
     else portal();
   }
   async function load() {
@@ -2060,5 +2063,1510 @@
     loadCatalogStatus();
     panel.append(profileSection, section, catalogSection, backup);
   }
+  // ===== 星轨 · 系统观测 =====
+
+  const ORBIT_RANGES = [
+    ["1h", "1 小时"],
+    ["6h", "6 小时"],
+    ["24h", "24 小时"],
+    ["7d", "7 天"],
+    ["14d", "14 天"],
+  ];
+  const ORBIT_COLORS = {
+    cpu: "#b9a6ef",
+    load: "#d5ae6e",
+    mem: "#e9c999",
+    cached: "#8f85c9",
+    swap: "#cc88a7",
+    rx: "#7498d6",
+    tx: "#74bdaa",
+    read: "#cc88a7",
+    write: "#d5ae6e",
+  };
+  const ORBIT_REFRESH = [
+    [5, "5 秒"],
+    [15, "15 秒"],
+    [30, "30 秒"],
+    [60, "1 分钟"],
+  ];
+  const orbitState = {
+    range: store.get("orbitRange", "24h"),
+    interval: store.get("orbitInterval", 5),
+    device: store.get("orbitDevice", ""),
+    devices: [],
+    snap: null,
+    hist: null,
+    sort: "cpu",
+    query: "",
+    detail: null,
+    refs: {},
+    timers: [],
+  };
+  let orbitChartId = 0;
+
+  function clearOrbitTimers() {
+    orbitState.timers.forEach(clearInterval);
+    orbitState.timers = [];
+    orbitState.detail = null;
+  }
+
+  function restartOrbitSnapshotTimer() {
+    if (state.route !== "/monitor") return;
+    orbitState.timers.filter(Number.isInteger).forEach(clearInterval);
+    orbitState.timers = orbitState.timers.filter((t) => !Number.isInteger(t));
+    orbitState.timers.push(
+      setInterval(() => {
+        if (!document.hidden) orbitFetchSnapshot();
+      }, orbitState.interval * 1000),
+    );
+  }
+
+  function fmtBytes(value, digits) {
+    if (value == null || !isFinite(value)) return "—";
+    const units = ["B", "KB", "MB", "GB", "TB", "PB"];
+    let n = Math.abs(value);
+    let i = 0;
+    while (n >= 1024 && i < units.length - 1) {
+      n /= 1024;
+      i++;
+    }
+    const d = digits ?? (i === 0 ? 0 : n >= 100 ? 0 : 1);
+    return `${n.toFixed(d)} ${units[i]}`;
+  }
+  const fmtRate = (v) =>
+    v == null || !isFinite(v) ? "—" : `${fmtBytes(v, 1)}/s`;
+  function fmtPercent(v) {
+    return v == null || !isFinite(v) ? "—" : `${v.toFixed(1)}%`;
+  }
+  function fmtDuration(sec) {
+    if (sec == null || !isFinite(sec) || sec < 0) return "—";
+    sec = Math.round(sec);
+    const d = Math.floor(sec / 86400),
+      h = Math.floor((sec % 86400) / 3600),
+      m = Math.floor((sec % 3600) / 60);
+    if (d) return `${d} 天 ${h} 小时`;
+    if (h) return `${h} 小时 ${m} 分钟`;
+    if (m) return `${m} 分钟`;
+    return `${sec} 秒`;
+  }
+  const fmtTemp = (v) =>
+    v == null || !isFinite(v) ? "—" : `${Math.round(v)}°C`;
+  function orbitTimeLabel(ts) {
+    const d = new Date(ts * 1000);
+    const hm = `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+    return orbitState.range === "7d" || orbitState.range === "14d"
+      ? `${d.getMonth() + 1}/${d.getDate()} ${hm}`
+      : hm;
+  }
+
+  function svgNode(tag, attrs = {}) {
+    const node = document.createElementNS("http://www.w3.org/2000/svg", tag);
+    for (const [k, v] of Object.entries(attrs)) node.setAttribute(k, v);
+    return node;
+  }
+  function niceCeil(value) {
+    if (!isFinite(value) || value <= 0) return 1;
+    const exp = Math.pow(10, Math.floor(Math.log10(value)));
+    for (const m of [1, 1.5, 2, 3, 5, 10]) if (m * exp >= value) return m * exp;
+    return 10 * exp;
+  }
+  function seriesMax(values) {
+    let top = 0;
+    for (const v of values)
+      if (v != null && isFinite(v)) top = Math.max(top, v);
+    return top;
+  }
+
+  function sparkline(values, color, options = {}) {
+    const { height = 38, width = 132, fill = true, max } = options;
+    const svg = svgNode("svg", {
+      viewBox: `0 0 ${width} ${height}`,
+      class: "sparkline",
+      preserveAspectRatio: "none",
+      "aria-hidden": "true",
+    });
+    const top = niceCeil(max ?? seriesMax(values)) || 1;
+    const step = width / Math.max(1, values.length - 1);
+    const runs = [];
+    let run = [];
+    values.forEach((v, i) => {
+      if (v == null || !isFinite(v)) {
+        if (run.length) runs.push(run);
+        run = [];
+        return;
+      }
+      run.push([i * step, height - 3 - (height - 8) * (v / top)]);
+    });
+    if (run.length) runs.push(run);
+    for (const r of runs) {
+      if (r.length === 1) {
+        svg.append(
+          svgNode("circle", { cx: r[0][0], cy: r[0][1], r: 2, fill: color }),
+        );
+        continue;
+      }
+      const line = r
+        .map((p) => `${p[0].toFixed(1)},${p[1].toFixed(1)}`)
+        .join(" ");
+      if (fill)
+        svg.append(
+          svgNode("polygon", {
+            points: `${r[0][0]},${height - 1} ${line} ${r[r.length - 1][0]},${height - 1}`,
+            fill: color,
+            opacity: 0.13,
+          }),
+        );
+      svg.append(
+        svgNode("polyline", {
+          points: line,
+          fill: "none",
+          stroke: color,
+          "stroke-width": 1.6,
+          "stroke-linejoin": "round",
+          "stroke-linecap": "round",
+          "vector-effect": "non-scaling-stroke",
+        }),
+      );
+    }
+    return svg;
+  }
+
+  function timeChart(node, { times, series, height = 190, fmt = fmtPercent }) {
+    node.replaceChildren();
+    if (!times.length) {
+      node.append(
+        empty("数据还在积累", "观测站每分钟归档一次，稍后再回来看看轨迹。"),
+      );
+      return;
+    }
+    const width = Math.max(300, Math.round(node.clientWidth || 640));
+    const pad = { l: 52, r: 12, t: 12, b: 24 };
+    const innerW = width - pad.l - pad.r;
+    const innerH = height - pad.t - pad.b;
+    const top = niceCeil(
+      Math.max(1e-6, ...series.map((s) => seriesMax(s.values))),
+    );
+    const x = (i) => pad.l + (innerW * i) / Math.max(1, times.length - 1);
+    const y = (v) => pad.t + innerH * (1 - Math.min(1, v / top));
+    const svg = svgNode("svg", {
+      viewBox: `0 0 ${width} ${height}`,
+      width: "100%",
+      height,
+      class: "orbit-chart",
+      role: "img",
+    });
+    const defs = svgNode("defs");
+    svg.append(defs);
+    for (let i = 0; i <= 4; i++) {
+      const value = (top / 4) * i;
+      const ly = y(value);
+      svg.append(
+        svgNode("line", {
+          x1: pad.l,
+          x2: width - pad.r,
+          y1: ly,
+          y2: ly,
+          stroke: "#cac6ef",
+          opacity: i === 0 ? 0.22 : 0.08,
+          "stroke-width": 1,
+        }),
+      );
+      const label = svgNode("text", {
+        x: pad.l - 8,
+        y: ly + 3.5,
+        "text-anchor": "end",
+        class: "chart-tick",
+      });
+      label.textContent = fmt(value);
+      svg.append(label);
+    }
+    const tickCount = Math.min(6, times.length);
+    for (let i = 0; i < tickCount; i++) {
+      const idx = Math.round(
+        (i * (times.length - 1)) / Math.max(1, tickCount - 1),
+      );
+      const label = svgNode("text", {
+        x: x(idx),
+        y: height - 7,
+        "text-anchor":
+          i === 0 ? "start" : i === tickCount - 1 ? "end" : "middle",
+        class: "chart-tick",
+      });
+      label.textContent = orbitTimeLabel(times[idx]);
+      svg.append(label);
+    }
+    series.forEach((s, si) => {
+      if (s.fill) {
+        const gradient = svgNode("linearGradient", {
+          id: `orbit-fill-${++orbitChartId}`,
+          x1: 0,
+          y1: 0,
+          x2: 0,
+          y2: 1,
+        });
+        gradient.append(
+          svgNode("stop", {
+            offset: "0%",
+            "stop-color": s.color,
+            "stop-opacity": 0.3,
+          }),
+          svgNode("stop", {
+            offset: "100%",
+            "stop-color": s.color,
+            "stop-opacity": 0.02,
+          }),
+        );
+        defs.append(gradient);
+      }
+      const runs = [];
+      let run = [];
+      s.values.forEach((v, i) => {
+        if (v == null || !isFinite(v)) {
+          if (run.length) runs.push(run);
+          run = [];
+          return;
+        }
+        run.push([x(i), y(v)]);
+      });
+      if (run.length) runs.push(run);
+      for (const r of runs) {
+        const d = r
+          .map(
+            (p, i) => `${i ? "L" : "M"}${p[0].toFixed(1)},${p[1].toFixed(1)}`,
+          )
+          .join("");
+        if (s.fill && r.length > 1)
+          svg.append(
+            svgNode("path", {
+              d: `${d}L${r[r.length - 1][0].toFixed(1)},${y(0)}L${r[0][0].toFixed(1)},${y(0)}Z`,
+              fill:
+                s.fill === true ? `url(#orbit-fill-${orbitChartId})` : s.fill,
+              stroke: "none",
+            }),
+          );
+        svg.append(
+          svgNode("path", {
+            d,
+            fill: "none",
+            stroke: s.color,
+            "stroke-width": 1.8,
+            "stroke-linejoin": "round",
+            "stroke-linecap": "round",
+            opacity: s.opacity ?? 1,
+          }),
+        );
+      }
+    });
+    const crosshair = svgNode("line", {
+      y1: pad.t,
+      y2: height - pad.b,
+      stroke: "#e9c999",
+      opacity: 0,
+      "stroke-width": 1,
+      "stroke-dasharray": "3 3",
+    });
+    svg.append(crosshair);
+    const tooltip = el("div", "chart-tooltip");
+    tooltip.setAttribute("aria-hidden", "true");
+    const overlay = svgNode("rect", {
+      x: pad.l,
+      y: pad.t,
+      width: innerW,
+      height: innerH,
+      fill: "transparent",
+    });
+    overlay.addEventListener("pointermove", (event) => {
+      const box = svg.getBoundingClientRect();
+      const rel = ((event.clientX - box.left) / box.width) * width;
+      const idx = Math.max(
+        0,
+        Math.min(
+          times.length - 1,
+          Math.round(((rel - pad.l) / innerW) * (times.length - 1)),
+        ),
+      );
+      const cx = x(idx);
+      crosshair.setAttribute("x1", cx);
+      crosshair.setAttribute("x2", cx);
+      crosshair.setAttribute("opacity", 0.5);
+      const rows = series
+        .map(
+          (s) =>
+            `<span><i style="background:${s.color}"></i>${s.name} ${fmt(s.values[idx])}</span>`,
+        )
+        .join("");
+      tooltip.innerHTML = `<b>${orbitTimeLabel(times[idx])}</b>${rows}`;
+      tooltip.classList.add("visible");
+      const tipX = Math.min(
+        width - 130,
+        Math.max(0, (cx / width) * node.clientWidth - 60),
+      );
+      tooltip.style.left = `${tipX}px`;
+    });
+    overlay.addEventListener("pointerleave", () => {
+      crosshair.setAttribute("opacity", 0);
+      tooltip.classList.remove("visible");
+    });
+    svg.append(overlay);
+    node.append(svg, tooltip);
+    const legend = el("div", "chart-legend");
+    series.forEach((s) => {
+      const item = el("span", "chart-legend-item");
+      const dot = el("i");
+      dot.style.background = s.color;
+      item.append(dot, document.createTextNode(s.name));
+      legend.append(item);
+    });
+    node.append(legend);
+  }
+
+  async function switchDevice(name) {
+    orbitState.device = name;
+    store.set("orbitDevice", name);
+    orbitState.snap = null;
+    orbitState.hist = null;
+    try {
+      orbitState.snap = await api(
+        `/api/metrics/snapshot?device=${encodeURIComponent(name)}`,
+      );
+      orbitOffline(false);
+    } catch {
+      orbitState.snap = null;
+    }
+    orbit();
+    window.scrollTo({ top: 0, behavior: "instant" });
+    orbitFetchSnapshot();
+    orbitFetchHistory();
+  }
+
+  function renderDeviceChips() {
+    const holder = orbitState.refs.orbitDevices;
+    if (!holder) return;
+    const devices = orbitState.devices;
+    holder.replaceChildren();
+    if (!devices.length) {
+      holder.append(el("span", "orbit-device-hint", "正在发现设备…"));
+      return;
+    }
+    const symbols = { nas: "▤", mac: "⌂", openwrt: "⌁" };
+    const activeName =
+      ((orbitState.snap && orbitState.snap.device) || {}).name ||
+      orbitState.device;
+    devices.forEach((d) => {
+      const active = d.name === activeName;
+      const chip = button(
+        `${symbols[d.kind] || "▤"} ${d.name}`,
+        "chip orbit-device" +
+          (active ? " active" : "") +
+          (d.online === false ? " offline" : ""),
+        () => {
+          if (!active) switchDevice(d.name);
+        },
+      );
+      chip.title = [
+        d.role,
+        d.kind === "nas"
+          ? "本机"
+          : d.error
+            ? "SSH 拉取：" + d.error
+            : "SSH 拉取",
+      ]
+        .filter(Boolean)
+        .join(" · ");
+      chip.setAttribute("aria-pressed", String(active));
+      holder.append(chip);
+    });
+  }
+
+  function syncChips(holder, activeLabel) {
+    holder.querySelectorAll(".chip").forEach((c) => {
+      const active = c.textContent === activeLabel;
+      c.classList.toggle("active", active);
+      c.setAttribute("aria-pressed", String(active));
+    });
+  }
+
+  function orbitPanel(span, title, small) {
+    const panel = el("section", `admin-panel orbit-panel ${span}`);
+    const head = el("div", "orbit-panel-head");
+    const h3 = el("h3", "", title);
+    if (small) h3.append(el("small", "", small));
+    head.append(h3);
+    panel.append(head);
+    return panel;
+  }
+
+  function vitalCard(label, sub) {
+    const card = el("article", "orbit-vital");
+    card.append(
+      el("span", "orbit-vital-label", label),
+      el("strong", "orbit-vital-value", "—"),
+      el("div", "orbit-vital-spark"),
+      el("span", "orbit-vital-sub", sub || ""),
+    );
+    return card;
+  }
+
+  function orbit() {
+    main.className = "monitor-page";
+    // switchDevice 与布局守卫会直接进入这里；render() 已清过一次，这里再清一次保证幂等。
+    main.replaceChildren();
+    clearOrbitTimers();
+    orbitState.refs = {};
+    orbitState.detail = null;
+    const kind = orbitState.snap
+      ? (orbitState.snap.device || {}).kind || "nas"
+      : "nas";
+    orbitState.layoutKind = kind;
+    const heading = el("div", "page-heading");
+    const titles = el("div");
+    const subtitle = el("p");
+    subtitle.append(
+      el("span", "poetic", "每一次心跳都有轨迹 · "),
+      document.createTextNode("轻量观测站，随时看见服务器的呼吸。"),
+    );
+    subtitle.id = "orbit-subtitle";
+    titles.append(
+      el("div", "eyebrow", "OBSERVATORY"),
+      el("h1", "", "星轨"),
+      subtitle,
+    );
+    heading.append(titles);
+    const devices = el("div", "categories orbit-devices");
+    devices.id = "orbit-devices";
+    devices.setAttribute("aria-label", "选择设备");
+    orbitState.refs.orbitDevices = devices;
+    renderDeviceChips();
+    const offline = el("div", "orbit-offline");
+    offline.setAttribute("role", "alert");
+    offline.hidden = true;
+    offline.append(
+      el("span", "", "观测站暂时离线 · 采集器可能在启动中，正在自动重试。"),
+      button("立即重试", "button small", () => {
+        orbitFetchSnapshot();
+        orbitFetchHistory();
+      }),
+    );
+    const chips = el("div", "orbit-toolbar");
+    const rangeChips = el("div", "categories orbit-ranges");
+    rangeChips.setAttribute("aria-label", "历史时间范围");
+    ORBIT_RANGES.forEach(([value, label]) => {
+      const node = button(
+        label,
+        "chip" + (orbitState.range === value ? " active" : ""),
+        () => {
+          orbitState.range = value;
+          store.set("orbitRange", value);
+          syncChips(rangeChips, label);
+          orbitFetchHistory();
+        },
+      );
+      node.setAttribute("aria-pressed", String(orbitState.range === value));
+      rangeChips.append(node);
+    });
+    const refreshChips = el("div", "categories orbit-refresh");
+    refreshChips.setAttribute("aria-label", "实时刷新频率");
+    const refreshLabel = el("span", "orbit-refresh-label", "刷新");
+    refreshChips.append(refreshLabel);
+    ORBIT_REFRESH.forEach(([seconds, label]) => {
+      const node = button(
+        label,
+        "chip" + (orbitState.interval === seconds ? " active" : ""),
+        () => {
+          orbitState.interval = seconds;
+          store.set("orbitInterval", seconds);
+          syncChips(refreshChips, label);
+          restartOrbitSnapshotTimer();
+          orbitFetchSnapshot();
+        },
+      );
+      node.setAttribute(
+        "aria-pressed",
+        String(orbitState.interval === seconds),
+      );
+      refreshChips.append(node);
+    });
+    chips.append(rangeChips, refreshChips);
+    const vitals = el("div", "orbit-vitals");
+    const refs = orbitState.refs;
+    refs.cpu = vitalCard("CPU", "加载中");
+    refs.mem = vitalCard("内存", "");
+    refs.load = vitalCard("负载", "");
+    refs.net = vitalCard("网络", "");
+    refs.io = vitalCard(kind === "openwrt" ? "温度" : "磁盘", "");
+    refs.docker = vitalCard(
+      kind === "nas" ? "容器" : kind === "mac" ? "进程" : "连接",
+      "",
+    );
+    vitals.append(
+      refs.cpu,
+      refs.mem,
+      refs.load,
+      refs.net,
+      refs.io,
+      refs.docker,
+    );
+    const grid = el("div", "orbit-grid");
+    const cpuPanel = orbitPanel("span-7", "算力", "CPU 使用率");
+    refs.cpuChart = el("div", "chart-holder");
+    cpuPanel.append(refs.cpuChart);
+    if (kind !== "mac") {
+      refs.cpuCores = el("div", "core-bars");
+      cpuPanel.append(refs.cpuCores);
+    }
+    const memPanel = orbitPanel(
+      "span-5",
+      "内存",
+      kind === "mac" ? "统一内存" : "用量与缓存",
+    );
+    refs.memChart = el("div", "chart-holder");
+    memPanel.append(refs.memChart);
+    const netPanel = orbitPanel(
+      "span-7",
+      kind === "openwrt" ? "转发吞吐" : "网络",
+      "接口实时速率",
+    );
+    refs.netChart = el("div", "chart-holder");
+    refs.netList = el("div", "orbit-mini-list");
+    netPanel.append(refs.netChart, refs.netList);
+    let storagePanel = null;
+    if (kind !== "openwrt") {
+      storagePanel = orbitPanel(
+        "span-5",
+        kind === "mac" ? "APFS 卷" : "存储",
+        kind === "mac" ? "系统盘用量" : "卷用量与磁盘 I/O",
+      );
+      refs.vols = el("div", "vol-bars");
+      storagePanel.append(refs.vols);
+      if (kind === "nas") {
+        refs.ioChart = el("div", "chart-holder io-holder");
+        storagePanel.append(refs.ioChart);
+      }
+    }
+    const containersPanel = orbitPanel("span-12", "容器", "Docker · 自动发现");
+    refs.containerSummary = el("div", "orbit-chip-row");
+    const controls = el("div", "orbit-controls");
+    const search = el("input");
+    search.type = "search";
+    search.placeholder = "按名称或镜像筛选…";
+    search.setAttribute("aria-label", "筛选容器");
+    search.value = orbitState.query;
+    search.addEventListener("input", () => {
+      orbitState.query = search.value;
+      renderContainers();
+    });
+    const sortWrap = el("div", "orbit-sort");
+    [
+      ["cpu", "按 CPU"],
+      ["mem", "按内存"],
+      ["name", "按名称"],
+    ].forEach(([value, label]) => {
+      sortWrap.append(
+        button(
+          label,
+          "chip" + (orbitState.sort === value ? " active" : ""),
+          () => {
+            orbitState.sort = value;
+            sortWrap.querySelectorAll(".chip").forEach((c) => {
+              const active = c.textContent === label;
+              c.classList.toggle("active", active);
+              c.setAttribute("aria-pressed", String(active));
+            });
+            renderContainers();
+          },
+        ),
+      );
+    });
+    controls.append(search, sortWrap);
+    refs.containerRows = el("div", "container-rows");
+    containersPanel.append(refs.containerSummary, controls, refs.containerRows);
+    if (kind === "nas") {
+      grid.append(containersPanel);
+      const tempsPanel = orbitPanel("span-12", "温度", "处理器 · 固态 · 机械");
+      refs.temps = el("div", "temp-chips");
+      tempsPanel.append(refs.temps);
+      grid.append(tempsPanel);
+      const probesPanel = orbitPanel(
+        "span-7",
+        "服务探活",
+        "来自门户目录的自动探测",
+      );
+      refs.probes = el("div", "probe-rows");
+      probesPanel.append(refs.probes);
+      grid.append(probesPanel);
+      const aboutPanel = orbitPanel("span-5", "系统信息", "这台机器的模样");
+      refs.about = el("div", "about-list");
+      aboutPanel.append(refs.about);
+      grid.append(aboutPanel);
+    } else if (kind === "openwrt") {
+      const tempsPanel = orbitPanel("span-12", "温度", "SoC 实时温度");
+      refs.temps = el("div", "temp-chips");
+      tempsPanel.append(refs.temps);
+      grid.append(tempsPanel);
+      const gatewayPanel = orbitPanel(
+        "span-5",
+        "网关状态",
+        "WAN · 连接跟踪 · DHCP",
+      );
+      refs.gateway = el("div", "gateway-rows");
+      gatewayPanel.append(refs.gateway);
+      grid.append(gatewayPanel);
+      const lanPanel = orbitPanel(
+        "span-12",
+        "内网设备",
+        "DHCP 租约 · ARP 邻居 · 无线关联",
+      );
+      refs.lanHosts = el("div", "host-rows");
+      lanPanel.append(refs.lanHosts);
+      grid.append(lanPanel);
+      const forwardsPanel = orbitPanel(
+        "span-7",
+        "端口映射",
+        "防火墙 DNAT 规则",
+      );
+      refs.forwards = el("div", "forward-rows");
+      forwardsPanel.append(refs.forwards);
+      grid.append(forwardsPanel);
+      const aboutPanel = orbitPanel("span-5", "固件与系统", "OpenWrt");
+      refs.about = el("div", "about-list");
+      aboutPanel.append(refs.about);
+      grid.append(aboutPanel);
+    } else {
+      const aboutPanel = orbitPanel("span-12", "这台 Mac", "macOS");
+      refs.about = el("div", "about-list about-wide");
+      aboutPanel.append(refs.about);
+      grid.append(aboutPanel);
+    }
+    grid.append(cpuPanel, memPanel, netPanel);
+    if (storagePanel) grid.append(storagePanel);
+    main.append(heading, devices, offline, chips, vitals, grid);
+    orbitFetchSnapshot();
+    orbitFetchHistory();
+    restartOrbitSnapshotTimer();
+    orbitState.timers.push(setInterval(orbitTickHistory, 90000));
+  }
+
+  function orbitTickHistory() {
+    if (document.hidden) return;
+    orbitFetchHistory();
+    if (orbitState.detail) loadDetailChart(orbitState.detail.name);
+  }
+
+  function orbitOffline(on) {
+    const banner = $(".orbit-offline");
+    if (banner) banner.hidden = !on;
+  }
+
+  function orbitDeviceQuery() {
+    return orbitState.device
+      ? `?device=${encodeURIComponent(orbitState.device)}`
+      : "";
+  }
+
+  async function orbitFetchSnapshot() {
+    try {
+      const snap = await api(`/api/metrics/snapshot${orbitDeviceQuery()}`);
+      orbitState.snap = snap;
+      orbitOffline(false);
+      updateSnapshot();
+    } catch (error) {
+      orbitOffline(true);
+    }
+  }
+
+  async function orbitFetchHistory() {
+    try {
+      const deviceQuery = orbitDeviceQuery();
+      const hist = await api(
+        `/api/metrics/history${deviceQuery}${deviceQuery ? "&" : "?"}range=${encodeURIComponent(orbitState.range)}`,
+      );
+      orbitState.hist = hist;
+      orbitOffline(false);
+      updateHistory();
+    } catch {
+      orbitOffline(true);
+    }
+  }
+
+  function vitalUpdate(card, value, values, color, sub) {
+    const strong = $(".orbit-vital-value", card);
+    strong.textContent = value;
+    const holder = $(".orbit-vital-spark", card);
+    holder.replaceChildren(
+      values && values.some((v) => v != null)
+        ? sparkline(values, color, { width: 220, height: 40 })
+        : document.createTextNode(""),
+    );
+    if (sub !== undefined) $(".orbit-vital-sub", card).textContent = sub;
+  }
+
+  function updateSnapshot() {
+    const snap = orbitState.snap;
+    if (!snap) return;
+    if ((snap.device || {}).kind !== orbitState.layoutKind) {
+      orbit();
+      return;
+    }
+    orbitState.devices = snap.devices || [];
+    renderDeviceChips();
+    const s = snap.sample || {};
+    const info = snap.info || {};
+    const tail = snap.tail || {};
+    const kind = (snap.device || {}).kind || "nas";
+    const subtitle = $("#orbit-subtitle");
+    if (subtitle) {
+      const leads = {
+        nas: "每一次心跳都有轨迹",
+        mac: "创作与日常的主力机",
+        openwrt: "整个内网的闸门",
+      };
+      subtitle.replaceChildren(
+        el("span", "poetic", (leads[kind] || leads.nas) + " · "),
+        document.createTextNode(
+          [
+            snap.device ? snap.device.name : info.hostname,
+            info.role,
+            s.uptime != null ? `已运行 ${fmtDuration(s.uptime)}` : null,
+            `采集间隔 ${snap.interval}s`,
+          ]
+            .filter(Boolean)
+            .join(" · "),
+        ),
+      );
+    }
+    const tempCpu = (s.temp || {}).cpu;
+    vitalUpdate(
+      orbitState.refs.cpu,
+      fmtPercent(s.cpu),
+      tail.cpu,
+      ORBIT_COLORS.cpu,
+      [
+        info.cpu_model
+          ? info.cpu_model.replace(/ CPU @.*/, "").replace(/\(R\)|\(TM\)/g, "")
+          : null,
+        info.cpus ? `${info.cpus} 线程` : null,
+        tempCpu != null ? `${fmtTemp(tempCpu)}` : null,
+      ]
+        .filter(Boolean)
+        .join(" · "),
+    );
+    const mem = s.mem || {};
+    vitalUpdate(
+      orbitState.refs.mem,
+      mem.total ? `${fmtBytes(mem.used)} / ${fmtBytes(mem.total)}` : "—",
+      tail.mem_used,
+      ORBIT_COLORS.mem,
+      mem.total
+        ? `可用 ${fmtBytes(mem.available)} · 缓存 ${fmtBytes(mem.cached)} · 交换 ${fmtBytes(mem.swap_used)}`
+        : "",
+    );
+    const load = s.load || {};
+    vitalUpdate(
+      orbitState.refs.load,
+      load.avg ? load.avg[0].toFixed(2) : "—",
+      tail.load,
+      ORBIT_COLORS.load,
+      load.avg
+        ? `5 分钟 ${load.avg[1].toFixed(2)} · 15 分钟 ${load.avg[2].toFixed(2)} · ${load.procs ?? "—"} 进程`
+        : "",
+    );
+    const primary = s.net_primary;
+    const net = primary ? (s.net || {})[primary] : null;
+    vitalUpdate(
+      orbitState.refs.net,
+      net ? `↓ ${fmtRate(net.rx)}` : "—",
+      tail.net_rx,
+      ORBIT_COLORS.rx,
+      [
+        net ? `↑ ${fmtRate(net.tx)}` : null,
+        primary,
+        net && net.speed > 0 ? `${net.speed} Mb/s` : null,
+      ]
+        .filter(Boolean)
+        .join(" · ") || "暂无活动接口",
+    );
+    if (kind === "openwrt") {
+      const soc = (s.temp || {}).soc;
+      vitalUpdate(
+        orbitState.refs.io,
+        fmtTemp(soc),
+        tail.temp_cpu,
+        ORBIT_COLORS.read,
+        soc != null && soc >= 70 ? "偏热，注意散热" : "SoC 温度",
+      );
+    } else if (kind === "mac" && s.vol && s.vol["/"]) {
+      const root = s.vol["/"];
+      const percent = root.total ? (root.used / root.total) * 100 : null;
+      vitalUpdate(
+        orbitState.refs.io,
+        percent != null ? `${percent.toFixed(0)}%` : "—",
+        null,
+        ORBIT_COLORS.read,
+        `APFS 已用 ${fmtBytes(root.used)} / ${fmtBytes(root.total)}`,
+      );
+    } else {
+      let ioTop = null;
+      for (const [name, one] of Object.entries(s.io || {})) {
+        const traffic = (one.r || 0) + (one.w || 0);
+        if (!ioTop || traffic > ioTop.traffic)
+          ioTop = { name, traffic, r: one.r, w: one.w };
+      }
+      vitalUpdate(
+        orbitState.refs.io,
+        ioTop ? `读 ${fmtRate(ioTop.r)}` : "—",
+        tail.io_r,
+        ORBIT_COLORS.read,
+        ioTop ? `写 ${fmtRate(ioTop.w)} · 最忙 ${ioTop.name}` : "",
+      );
+    }
+    if (kind === "mac") {
+      vitalUpdate(
+        orbitState.refs.docker,
+        s.processes != null ? String(s.processes) : "—",
+        null,
+        ORBIT_COLORS.tx,
+        "进程总数",
+      );
+    } else if (kind === "openwrt") {
+      const conn = s.conntrack || {};
+      vitalUpdate(
+        orbitState.refs.docker,
+        conn.count != null ? String(conn.count) : "—",
+        null,
+        ORBIT_COLORS.tx,
+        `连接跟踪${s.dhcp_leases != null ? ` · DHCP ${s.dhcp_leases} 台` : ""}`,
+      );
+    } else {
+      const docker = s.docker || {};
+      vitalUpdate(
+        orbitState.refs.docker,
+        docker.total != null
+          ? `${docker.running ?? "—"} / ${docker.total}`
+          : "—",
+        null,
+        ORBIT_COLORS.tx,
+        docker.total != null
+          ? `运行中 / 全部 · CPU ${fmtPercent(docker.cpu)} · 内存 ${fmtBytes(docker.mem)}`
+          : "Docker 未连接",
+      );
+    }
+    updateCoreBars(s.cores);
+    renderVols(s.vol || {});
+    renderTemps(s.temp || {});
+    renderNetList(s.net || {}, primary);
+    renderContainers();
+    renderGateway(s);
+    renderLanHosts(s.lan_hosts);
+    renderForwards(s.port_forwards);
+    renderAbout(info, s);
+    if (orbitState.detail) updateDetailLive();
+  }
+
+  function updateCoreBars(cores) {
+    const holder = orbitState.refs.cpuCores;
+    if (!holder) return;
+    holder.replaceChildren();
+    if (!cores || !cores.length) {
+      holder.hidden = true;
+      return;
+    }
+    holder.hidden = false;
+    cores.forEach((v) => {
+      const bar = el("div", "core-bar");
+      const fill = el("i");
+      fill.style.height = `${Math.max(2, Math.min(100, v ?? 0))}%`;
+      if ((v ?? 0) > 85) fill.classList.add("hot");
+      bar.append(fill);
+      const label = el("span", "", String(v == null ? "–" : Math.round(v)));
+      bar.append(label);
+      holder.append(bar);
+    });
+  }
+
+  function renderVols(vols) {
+    const holder = orbitState.refs.vols;
+    if (!holder) return;
+    holder.replaceChildren();
+    const names = Object.keys(vols);
+    if (!names.length) {
+      holder.append(el("p", "hint", "暂未挂载可统计的卷。"));
+      return;
+    }
+    names.forEach((name) => {
+      const v = vols[name] || {};
+      const percent = v.total ? (v.used / v.total) * 100 : 0;
+      const row = el("div", "vol-row");
+      const head = el("div", "vol-head");
+      const label = el("strong", "", name);
+      label.title = v.device ? `${v.device} · ${v.fstype || ""}` : name;
+      head.append(
+        label,
+        el("span", "vol-fstype", v.fstype || ""),
+        el("span", "vol-nums", `${fmtBytes(v.used)} / ${fmtBytes(v.total)}`),
+      );
+      const bar = el("div", "vol-bar");
+      const fill = el("i");
+      fill.style.width = `${Math.min(100, percent)}%`;
+      if (percent > 90) fill.classList.add("hot");
+      else if (percent > 75) fill.classList.add("warm");
+      bar.append(fill);
+      row.append(head, bar);
+      holder.append(row);
+    });
+  }
+
+  function renderTemps(temps) {
+    const holder = orbitState.refs.temps;
+    if (!holder) return;
+    holder.replaceChildren();
+    const names = Object.keys(temps);
+    if (!names.length) {
+      holder.append(el("p", "hint", "未读到温度传感器。"));
+      return;
+    }
+    const labels = {
+      cpu: "处理器",
+      cpu_cores_max: "核心峰值",
+      gpu: "核显",
+      pch: "PCH",
+      acpitz: "主板",
+    };
+    names.forEach((name) => {
+      const chip = el("span", "temp-chip");
+      const value = temps[name];
+      if (value >= 75) chip.classList.add("hot");
+      else if (value >= 60) chip.classList.add("warm");
+      chip.append(
+        el("strong", "", fmtTemp(value)),
+        el("span", "", labels[name] || name),
+      );
+      holder.append(chip);
+    });
+  }
+
+  function renderNetList(net, primary) {
+    const holder = orbitState.refs.netList;
+    if (!holder) return;
+    holder.replaceChildren();
+    const names = Object.keys(net)
+      .filter((n) => n !== "lo")
+      .sort(
+        (a, b) =>
+          (net[b].rx || 0) +
+          (net[b].tx || 0) -
+          ((net[a].rx || 0) + (net[a].tx || 0)),
+      )
+      .slice(0, 4);
+    if (!names.length) {
+      holder.hidden = true;
+      return;
+    }
+    holder.hidden = false;
+    names.forEach((name) => {
+      const one = net[name];
+      const row = el("div", "mini-row");
+      row.append(
+        el("strong", "", name + (name === primary ? " ·" : "")),
+        el("span", "", `↓ ${fmtRate(one.rx)}  ↑ ${fmtRate(one.tx)}`),
+      );
+      holder.append(row);
+    });
+  }
+
+  function containerStatusDot(entry) {
+    const dot = el(
+      "i",
+      "status-dot " + (entry.state === "running" ? "dot-run" : "dot-stop"),
+    );
+    if (entry.health === "unhealthy") dot.classList.add("dot-bad");
+    return dot;
+  }
+
+  function renderContainers() {
+    const holder = orbitState.refs.containerRows;
+    if (!holder) return;
+    const snap = orbitState.snap;
+    const summary = orbitState.refs.containerSummary;
+    const containers = (snap && snap.containers) || [];
+    const docker = (snap && snap.sample && snap.sample.docker) || {};
+    summary.replaceChildren();
+    summary.append(
+      el(
+        "span",
+        "chip static",
+        `运行 ${docker.running ?? "—"} · 共 ${docker.total ?? containers.length}`,
+      ),
+      el("span", "chip static", `CPU ${fmtPercent(docker.cpu)}`),
+      el("span", "chip static", `内存 ${fmtBytes(docker.mem)}`),
+    );
+    const query = orbitState.query.trim().toLocaleLowerCase();
+    let items = containers.filter(
+      (c) =>
+        !query ||
+        c.name.toLocaleLowerCase().includes(query) ||
+        (c.image || "").toLocaleLowerCase().includes(query),
+    );
+    const sorters = {
+      cpu: (a, b) =>
+        (b.cpu || 0) - (a.cpu || 0) || a.name.localeCompare(b.name),
+      mem: (a, b) =>
+        (b.mem || 0) - (a.mem || 0) || a.name.localeCompare(b.name),
+      name: (a, b) => a.name.localeCompare(b.name),
+    };
+    items = items.slice().sort(sorters[orbitState.sort] || sorters.cpu);
+    holder.replaceChildren();
+    if (!items.length) {
+      holder.append(
+        empty(
+          query ? "没有匹配的容器" : "暂无容器信息",
+          query ? "换个关键词试试。" : "等待观测站汇报 Docker 状态。",
+        ),
+      );
+      return;
+    }
+    items.forEach((entry) => {
+      const row = el(
+        "button",
+        "container-row" + (entry.state === "running" ? "" : " stopped"),
+      );
+      row.type = "button";
+      row.setAttribute("aria-label", `查看容器 ${entry.name} 详情`);
+      row.append(
+        containerStatusDot(entry),
+        el("span", "container-name", entry.name),
+        el("span", "container-image", entry.image || ""),
+        el(
+          "span",
+          "container-cpu",
+          entry.state === "running" ? fmtPercent(entry.cpu) : "—",
+        ),
+        el(
+          "span",
+          "container-mem",
+          entry.state === "running" ? fmtBytes(entry.mem) : "—",
+        ),
+        el("span", "container-status", entry.status || entry.state),
+      );
+      row.addEventListener("click", () => openContainerDetail(entry.name));
+      holder.append(row);
+    });
+  }
+
+  function openContainerDetail(name) {
+    const snap = orbitState.snap;
+    const entry = ((snap && snap.containers) || []).find(
+      (c) => c.name === name,
+    );
+    if (!entry) return;
+    const content = el("div", "container-detail");
+    const meta = el("div", "detail-meta");
+    const live = el("div", "detail-live");
+    const cpuHolder = el("div", "chart-holder detail-chart");
+    const memHolder = el("div", "chart-holder detail-chart");
+    content.append(
+      meta,
+      live,
+      el("h4", "", "CPU 使用轨迹"),
+      cpuHolder,
+      el("h4", "", "内存轨迹"),
+      memHolder,
+    );
+    orbitState.detail = { name, entry, meta, live, cpuHolder, memHolder };
+    dialog.addEventListener(
+      "close",
+      () => {
+        orbitState.detail = null;
+      },
+      { once: true },
+    );
+    openDialog("容器 · " + name, content);
+    updateDetailLive();
+    loadDetailChart(name);
+  }
+
+  function updateDetailLive() {
+    const detail = orbitState.detail;
+    if (!detail) return;
+    const entry = ((orbitState.snap && orbitState.snap.containers) || []).find(
+      (c) => c.name === detail.name,
+    );
+    if (!entry) return;
+    detail.entry = entry;
+    detail.meta.replaceChildren();
+    const rows = [
+      ["镜像", entry.image || "—"],
+      [
+        "状态",
+        `${entry.state === "running" ? "运行中" : entry.state === "exited" ? "已停止" : entry.state}${entry.health ? " · " + entry.health : ""}`,
+      ],
+      ["运行时长", entry.status || "—"],
+    ];
+    if (entry.project) rows.push(["Compose 项目", entry.project]);
+    rows.forEach(([k, v]) => {
+      const row = el("div", "about-row");
+      row.append(el("span", "", k), el("strong", "", v));
+      detail.meta.append(row);
+    });
+    detail.live.replaceChildren();
+    const cells = [
+      ["CPU", fmtPercent(entry.cpu)],
+      ["内存", fmtBytes(entry.mem)],
+      ["内存上限", fmtBytes(entry.mem_limit)],
+      ["网络收", fmtRate(entry.rx)],
+      ["网络发", fmtRate(entry.tx)],
+      ["磁盘读", fmtRate(entry.blk_r)],
+      ["磁盘写", fmtRate(entry.blk_w)],
+    ];
+    cells.forEach(([k, v]) => {
+      const cell = el("div", "detail-cell");
+      cell.append(el("span", "", k), el("strong", "", v));
+      detail.live.append(cell);
+    });
+  }
+
+  async function loadDetailChart(name) {
+    const detail = orbitState.detail;
+    if (!detail || detail.name !== name) return;
+    try {
+      const data = await api(
+        `/api/metrics/history?range=${encodeURIComponent(orbitState.range)}&container=${encodeURIComponent(name)}`,
+      );
+      if (orbitState.detail && orbitState.detail.name === name) {
+        timeChart(detail.cpuHolder, {
+          times: data.t,
+          series: [
+            {
+              name: "CPU",
+              values: data.cpu,
+              color: ORBIT_COLORS.cpu,
+              fill: true,
+            },
+          ],
+          fmt: fmtPercent,
+          height: 150,
+        });
+        timeChart(detail.memHolder, {
+          times: data.t,
+          series: [
+            {
+              name: "内存",
+              values: data.mem,
+              color: ORBIT_COLORS.mem,
+              fill: true,
+            },
+          ],
+          fmt: (v) => fmtBytes(v),
+          height: 150,
+        });
+      }
+    } catch {
+      detail.cpuHolder.replaceChildren(el("p", "hint", "轨迹暂不可用。"));
+      detail.memHolder.replaceChildren();
+    }
+  }
+
+  function updateHistory() {
+    const hist = orbitState.hist;
+    if (!hist) return;
+    const sys = hist.system || {};
+    const seriesOf = (values, name, color, fill) => ({
+      name,
+      values: values || [],
+      color,
+      fill,
+    });
+    timeChart(orbitState.refs.cpuChart, {
+      times: sys.t || [],
+      series: [seriesOf(sys.cpu, "CPU 总量", ORBIT_COLORS.cpu, true)],
+      fmt: fmtPercent,
+    });
+    timeChart(orbitState.refs.memChart, {
+      times: sys.t || [],
+      series: [
+        seriesOf(sys.mem_used, "已用", ORBIT_COLORS.mem, true),
+        seriesOf(sys.swap_used, "交换", ORBIT_COLORS.swap),
+      ],
+      fmt: (v) => fmtBytes(v),
+      height: 190,
+    });
+    const net = sys.net || {};
+    const primaryNet =
+      orbitState.snap &&
+      orbitState.snap.sample &&
+      orbitState.snap.sample.net_primary
+        ? orbitState.snap.sample.net_primary
+        : Object.keys(net).sort(
+            (a, b) =>
+              seriesMax((net[b] || {}).rx || []) -
+              seriesMax((net[a] || {}).rx || []),
+          )[0];
+    const netSeries =
+      primaryNet && net[primaryNet]
+        ? [
+            seriesOf(
+              net[primaryNet].rx,
+              `${primaryNet} 下行`,
+              ORBIT_COLORS.rx,
+              true,
+            ),
+            seriesOf(net[primaryNet].tx, `${primaryNet} 上行`, ORBIT_COLORS.tx),
+          ]
+        : [];
+    timeChart(orbitState.refs.netChart, {
+      times: sys.t || [],
+      series: netSeries,
+      fmt: (v) => fmtRate(v),
+    });
+    const io = sys.io || {};
+    const topDisks = Object.keys(io)
+      .sort(
+        (a, b) =>
+          seriesMax((io[b] || {}).r || []) +
+          seriesMax((io[b] || {}).w || []) -
+          (seriesMax((io[a] || {}).r || []) + seriesMax((io[a] || {}).w || [])),
+      )
+      .slice(0, 3);
+    timeChart(orbitState.refs.ioChart, {
+      times: sys.t || [],
+      series: topDisks.flatMap((d) => [
+        seriesOf((io[d] || {}).r, `${d} 读`, ORBIT_COLORS.read),
+        seriesOf((io[d] || {}).w, `${d} 写`, ORBIT_COLORS.write),
+      ]),
+      fmt: (v) => fmtRate(v),
+      height: 150,
+    });
+    renderProbes(hist.probes || []);
+    if (orbitState.detail) loadDetailChart(orbitState.detail.name);
+  }
+
+  function renderProbes(probes) {
+    const holder = orbitState.refs.probes;
+    if (!holder) return;
+    holder.replaceChildren();
+    if (!probes.length) {
+      holder.append(
+        el(
+          "p",
+          "hint",
+          "还没有探活目标。目录同步完成后，每个服务入口都会自动出现在这里。",
+        ),
+      );
+      return;
+    }
+    const sorted = probes
+      .slice()
+      .sort(
+        (a, b) =>
+          Number(!!a.last && !a.last.ok) - Number(!!b.last && !b.last.ok) ||
+          a.name.localeCompare(b.name, "zh-CN"),
+      );
+    sorted.forEach((p) => {
+      const ok = p.last ? p.last.ok : null;
+      const row = el("div", "probe-row" + (ok === false ? " failed" : ""));
+      const dot = el(
+        "i",
+        "status-dot" + (ok === false ? " dot-bad" : ok ? " dot-run" : ""),
+      );
+      dot.title = p.last
+        ? `${p.last.ok ? "最近探测正常" : "最近探测失败"} · ${p.last.ms ?? "—"} ms · HTTP ${p.last.code ?? "—"}`
+        : "尚无探测记录";
+      const rate = p.rate == null ? "—" : `${(p.rate * 100).toFixed(1)}%`;
+      row.append(
+        dot,
+        el("strong", "", p.name),
+        el("span", "probe-host", p.host || ""),
+        el("span", "probe-rate", rate),
+        el("span", "probe-ms", p.avg_ms != null ? `${p.avg_ms} ms` : "—"),
+      );
+      holder.append(row);
+    });
+  }
+
+  function renderGateway(s) {
+    const holder = orbitState.refs.gateway;
+    if (!holder) return;
+    holder.replaceChildren();
+    const wan = s.wan || {};
+    const wanRow = el("div", "about-row");
+    wanRow.append(
+      el("span", "", "WAN"),
+      el(
+        "strong",
+        "",
+        wan.up
+          ? `${wan.ip || "—"} · ${wan.proto || "pppoe"}${wan.uptime != null ? ` · 已连接 ${fmtDuration(wan.uptime)}` : ""}`
+          : "未连接",
+      ),
+    );
+    holder.append(wanRow);
+    const conn = s.conntrack;
+    if (conn && conn.max) {
+      const percent = Math.min(100, (conn.count / conn.max) * 100);
+      const row = el("div", "vol-row gateway-conn");
+      const head = el("div", "vol-head");
+      head.append(
+        el("strong", "", "连接跟踪"),
+        el(
+          "span",
+          "vol-nums",
+          `${conn.count} / ${conn.max} (${percent.toFixed(1)}%)`,
+        ),
+      );
+      const bar = el("div", "vol-bar");
+      const fill = el("i");
+      fill.style.width = `${percent}%`;
+      if (percent > 85) fill.classList.add("hot");
+      else if (percent > 65) fill.classList.add("warm");
+      bar.append(fill);
+      row.append(head, bar);
+      holder.append(row);
+    }
+    if (s.dhcp_leases != null) {
+      const row = el("div", "about-row");
+      row.append(
+        el("span", "", "DHCP 租约"),
+        el("strong", "", `${s.dhcp_leases} 台`),
+      );
+      holder.append(row);
+    }
+  }
+
+  function renderLanHosts(hosts) {
+    const holder = orbitState.refs.lanHosts;
+    if (!holder) return;
+    holder.replaceChildren();
+    if (!hosts || !hosts.length) {
+      holder.append(
+        el("p", "hint", "暂未读到内网设备（DHCP 租约与 ARP 邻居均为空）。"),
+      );
+      return;
+    }
+    const badge = { dhcp: "DHCP", arp: "ARP", wifi: "WiFi" };
+    hosts.forEach((one) => {
+      const row = el("div", "host-row");
+      const info = el("div", "host-info");
+      const nameRow = el("div", "host-name");
+      nameRow.append(el("strong", "", one.name || "未命名设备"));
+      const source = el(
+        "span",
+        `host-source source-${one.source || "arp"}`,
+        badge[one.source] || "ARP",
+      );
+      nameRow.append(source);
+      if (one.signal != null)
+        nameRow.append(el("span", "host-signal", `${one.signal} dBm`));
+      info.append(
+        nameRow,
+        el("span", "host-meta", `${one.ip || "—"} · ${one.mac || "MAC 未知"}`),
+      );
+      row.append(info);
+      holder.append(row);
+    });
+  }
+
+  function renderForwards(forwards) {
+    const holder = orbitState.refs.forwards;
+    if (!holder) return;
+    holder.replaceChildren();
+    if (!forwards || !forwards.length) {
+      holder.append(el("p", "hint", "没有配置中的端口映射规则。"));
+      return;
+    }
+    forwards.forEach((one) => {
+      const row = el("div", "host-row");
+      const info = el("div", "host-info");
+      const nameRow = el("div", "host-name");
+      nameRow.append(el("strong", "", one.name || "未命名规则"));
+      const proto = el(
+        "span",
+        "host-source source-dhcp",
+        (one.proto || "tcp").toUpperCase(),
+      );
+      nameRow.append(proto);
+      info.append(
+        nameRow,
+        el(
+          "span",
+          "host-meta",
+          `外部 :${one.src_port || "—"} → ${one.dest_ip}:${one.dest_port || "—"}`,
+        ),
+      );
+      row.append(info);
+      holder.append(row);
+    });
+  }
+
+  function renderAbout(info, sample) {
+    const holder = orbitState.refs.about;
+    if (!holder) return;
+    const docker = sample.docker || {};
+    const rows =
+      sample.firmware || sample.model
+        ? [
+            ["主机名", info.hostname || "—"],
+            ["固件", sample.firmware || info.os || "—"],
+            ["型号", sample.model || "—"],
+            ["内核", info.kernel || "—"],
+            [
+              "WAN",
+              (sample.wan || {}).up
+                ? `${sample.wan.ip || "—"}（${sample.wan.proto || "pppoe"}）`
+                : "未连接",
+            ],
+            [
+              "已运行",
+              sample.uptime != null ? fmtDuration(sample.uptime) : "—",
+            ],
+            [
+              "内网设备",
+              Array.isArray(sample.lan_hosts)
+                ? `${sample.lan_hosts.length} 台`
+                : "—",
+            ],
+            ["数据保留", "1 小时细粒度 · 14 天分钟归档"],
+            ["门户版本", state.data.version || "—"],
+          ]
+        : [
+            ["主机名", info.hostname || "—"],
+            ["操作系统", info.os || "—"],
+            ["内核", info.kernel || "—"],
+            ...(info.arch ? [["架构", info.arch]] : []),
+            ...(info.cpu_model ? [["处理器", info.cpu_model]] : []),
+            ...(info.cpus != null ? [["逻辑核心", String(info.cpus)]] : []),
+            ...(info.docker_version
+              ? [
+                  ["Docker", `Engine ${info.docker_version}`],
+                  [
+                    "容器",
+                    docker.total != null
+                      ? `${docker.running} 运行 / ${docker.total} 个`
+                      : "—",
+                  ],
+                ]
+              : []),
+            [
+              "已运行",
+              sample.uptime != null ? fmtDuration(sample.uptime) : "—",
+            ],
+            ["数据保留", "1 小时细粒度 · 14 天分钟归档"],
+            ["门户版本", state.data.version || "—"],
+          ];
+    holder.replaceChildren();
+    rows.forEach(([k, v]) => {
+      const row = el("div", "about-row");
+      row.append(el("span", "", k), el("strong", "", v));
+      holder.append(row);
+    });
+  }
+
+  let orbitResizeTimer = null;
+  window.addEventListener("resize", () => {
+    if (state.route !== "/monitor" || !orbitState.hist) return;
+    clearTimeout(orbitResizeTimer);
+    orbitResizeTimer = setTimeout(() => {
+      if (state.route === "/monitor" && orbitState.hist) updateHistory();
+    }, 200);
+  });
+
   load();
 })();

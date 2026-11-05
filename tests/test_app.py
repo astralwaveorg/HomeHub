@@ -330,5 +330,46 @@ class AppTests(unittest.TestCase):
         self.assertFalse(self.request('GET','/api/data',cookie=other)[1]['authenticated'])
         self.assertTrue(self.request('GET','/api/data',cookie=cookie)[1]['authenticated'])
         self.assertFalse((Path(self.temp.name)/'initial-admin-password').exists())
+    def test_91_monitor_page_and_metrics_proxy(self):
+        status,body,headers=self.request('GET','/monitor')
+        self.assertEqual(status,200)
+        self.assertIn('text/html',headers.get('Content-Type',''))
+        # Metrics are LAN-public reads: no login required, collector errors stay 503.
+        status,body,_=self.request('GET','/api/metrics/snapshot')
+        self.assertEqual(status,503)
+        self.assertTrue(body['error'])
+        status,body,_=self.request('GET','/api/metrics/history?range=2h')
+        self.assertEqual(status,400)
+        status,body,_=self.request('GET','/api/metrics/history?range=24h')
+        self.assertEqual(status,503)
+
+    def test_92_metrics_proxy_passthrough(self):
+        import http.server, threading
+        class Stub(http.server.BaseHTTPRequestHandler):
+            def do_GET(self):
+                payload={'sample':{'t':1},'containers':[]}
+                if self.path.startswith('/history'):
+                    payload={'range':'24h','system':{'t':[1],'cpu':[2.0]}}
+                body=json.dumps(payload).encode()
+                self.send_response(200)
+                self.send_header('Content-Type','application/json')
+                self.send_header('Content-Length',str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+            def log_message(self,*args):pass
+        server=http.server.ThreadingHTTPServer(('127.0.0.1',0),Stub)
+        threading.Thread(target=server.serve_forever,daemon=True).start()
+        old=self.app.COLLECTOR
+        self.app.COLLECTOR=f'http://127.0.0.1:{server.server_address[1]}'
+        try:
+            status,body,_=self.request('GET','/api/metrics/snapshot')
+            self.assertEqual(status,200)
+            self.assertEqual(body['sample']['t'],1)
+            status,body,_=self.request('GET','/api/metrics/history?range=24h&container=web')
+            self.assertEqual(status,200)
+            self.assertEqual(body['system']['cpu'][0],2.0)
+        finally:
+            self.app.COLLECTOR=old
+            server.shutdown();server.server_close()
 
 if __name__=='__main__':unittest.main()

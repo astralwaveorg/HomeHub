@@ -19,7 +19,7 @@ import urllib.request
 import uuid
 
 ROOT = Path('/vol1/1000/docker/homehub')
-RUNTIME = {'app.py', 'catalog.py', 'icon_library.py', 'seed.json', 'ambient.wav', 'Dockerfile', 'compose.yaml', 'VERSION', '.dockerignore', 'README.md', 'CHANGELOG.md'}
+RUNTIME = {'app.py', 'catalog.py', 'collector.py', 'icon_library.py', 'seed.json', 'ambient.wav', 'Dockerfile', 'compose.yaml', 'VERSION', '.dockerignore', 'README.md', 'CHANGELOG.md'}
 
 
 def safe(path):
@@ -137,7 +137,7 @@ def compose(image):
     env = dict(os.environ, HOMEHUB_IMAGE=image)
     # Explicit project directory/file prevents accidentally acting on another stack.
     run('docker', 'compose', '--project-directory', str(ROOT), '-f', str(ROOT / 'compose.yaml'),
-        'up', '-d', '--no-deps', '--no-build', '--pull', 'never', 'homehub', env=env)
+        'up', '-d', '--no-deps', '--no-build', '--pull', 'never', 'homehub', 'collector', env=env)
 
 
 def health(public_url, expected_version=None):
@@ -164,6 +164,27 @@ def health(public_url, expected_version=None):
             time.sleep(2)
 
 
+def collector_health(attempts=24):
+    # The collector has no host port; verify it through the portal's compose network.
+    check = "import urllib.request;urllib.request.urlopen('http://collector:9100/health',timeout=4)"
+    for attempt in range(attempts):
+        try:
+            run('docker', 'exec', 'homehub', 'python', '-c', check)
+            return
+        except RuntimeError:
+            if attempt == attempts - 1: raise RuntimeError('Collector health check failed')
+            time.sleep(2)
+
+
+def remove_collector():
+    # Best-effort cleanup when rolling back to a compose file without the service.
+    try:
+        subprocess.run(['docker', 'rm', '-f', 'homehub-collector'], cwd=ROOT,
+                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False)
+    except OSError:
+        pass
+
+
 def restore(name, public_url):
     if not re.fullmatch(r'[0-9]{8}T[0-9]{6}Z-[0-9a-f]{8}', name):
         raise ValueError('Invalid backup basename')
@@ -178,6 +199,7 @@ def restore(name, public_url):
         content = safe(dest / 'source' / name).read_bytes()
         if name == 'compose.yaml': content = pin_compose(content, image)
         atomic(ROOT / name, content, public=True)
+    remove_collector()
     compose(image)
     health(public_url)
     print('Code/image rollback healthy; database and media were NOT restored', flush=True)
@@ -186,7 +208,8 @@ def restore(name, public_url):
 def pin_compose(content, image):
     text = content.decode()
     text, count = re.subn(r'(?m)^    image:.*$', '    image: ${HOMEHUB_IMAGE:-' + image + '}', text)
-    if count != 1: raise ValueError('Expected exactly one homehub image declaration')
+    # Older single-service backups stay rollback-able; deploy() asserts the new count.
+    if count < 1: raise ValueError('Expected at least one service image declaration')
     return text.encode()
 
 
@@ -209,6 +232,8 @@ def deploy(stage, public_url, publish_existing=False):
             if not member.isfile(): raise ValueError('Only regular runtime files allowed')
             contents[member.name] = tf.extractfile(member).read()
     if not RUNTIME.issubset(contents): raise ValueError('Runtime incomplete')
+    if len(re.findall(r'(?m)^    image:', contents['compose.yaml'].decode())) != 2:
+        raise ValueError('compose.yaml must declare exactly the portal and collector services')
     for name, data in contents.items(): atomic(source / name, data, public=True)
     image = 'homehub-portal:' + m['version'] + '-' + m['revision']
     print('Preparing immutable image: ' + image, flush=True)
@@ -216,7 +241,12 @@ def deploy(stage, public_url, publish_existing=False):
     try:
         label = run('docker', 'image', 'inspect', '--format', '{{index .Config.Labels "org.opencontainers.image.revision"}}', image, capture=True)
     except RuntimeError:
-        run('docker', 'build', '--label', 'org.opencontainers.image.revision=' + m['revision'], '-t', image, str(source))
+        build = ['docker', 'build', '--label', 'org.opencontainers.image.revision=' + m['revision']]
+        proxy = os.environ.get('HOMEHUB_BUILD_PROXY', '').strip()
+        if proxy:
+            for key in ('HTTP_PROXY', 'HTTPS_PROXY'):
+                build += ['--build-arg', f'{key}={proxy}']
+        run(*build, '-t', image, str(source))
     else:
         if label != m['revision']: raise ValueError('Existing immutable image tag has wrong revision')
     print('Image ready; backing up live SQLite/media and previous runtime on NAS', flush=True)
@@ -229,6 +259,7 @@ def deploy(stage, public_url, publish_existing=False):
             atomic(ROOT / filename, data, public=True)
         compose(image)
         health(public_url, m['version'])
+        collector_health()
         args = ['docker', 'exec', 'homehub', 'python', '/app/app.py', 'sync-catalog']
         if publish_existing: args.append('--publish-existing')
         run(*args)
