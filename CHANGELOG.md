@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.10.0
+
+- 星图新增 **Private Track** 分类（第 8 个分类，31 个入口）：30 个 PT 站点的个人页面 + pt-plugins 在线监控站。名称与备注逐个核对自 pt-plugins 监控站与各站自身页面（M-Team、AGSVPT、Audiences、ToTheGlory、憨憨、UBits、CrabPt、U2、PTTime、HDTime、DICMusic、OpenCD、JPopSuki、BTSchool、好学、星陨阁、CyanBug、CarPT、lajidui、LemonHD、下水道、三月传媒、PTSkit、Kelu、HappyFappy、蜜柑计划、蜂巢、DiscFan、SkyeySnow、HDDolby、PT 站点监控）。
+- 全部 31 条以 **private** 可见性入库：PT 个人页含用户编号，匿名访客不可见（登录后正常显示），目录测试的匿名/登录计数断言相应更新；星轨探活面板的目标会自动扩展到这批新入口（名称与状态可见，不枚举 URL）。
+- 内置目录 49 → **80 个入口**、7 → 8 个分类。
+
 ## 1.9.0
 
 - 新增「星轨」系统观测页 `/monitor`（顶栏第三入口）：免登录的轻量观测站，实时指标卡（CPU / 内存 / 负载 / 网络 / 磁盘 / 容器，带迷你趋势线）+ 手绘 SVG 历史图表（1 小时 / 6 小时 / 24 小时 / 7 天 / 14 天五档，悬停十字线与图例）+ 12 核心占用条 + 每卷用量条（设备 / 文件系统标注）+ 温度芯片（处理器 / 核心 / 固态 / 机械 / 主板）+ 服务探活 + 系统信息。

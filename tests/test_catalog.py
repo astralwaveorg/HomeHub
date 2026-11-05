@@ -135,7 +135,7 @@ class CatalogTests(unittest.TestCase):
         self.old_database();before=self.snapshot_auth_settings()
         result=self.sync(publish=True)
         self.assertEqual(result['added'],len(SEED['links'])-len(OLD['links'])+len(RETIRED_URLS))
-        self.assertEqual(result['public'],len(SEED['links']))
+        self.assertEqual(result['public'],sum(1 for x in SEED['links'] if x['visibility']=='public'))
         self.assertEqual(self.snapshot_auth_settings(),before)
         self.assertFalse((self.app.DATA/'initial-admin-password').exists())
         with self.app.db() as c:
@@ -220,9 +220,10 @@ class CatalogTests(unittest.TestCase):
 
     def test_seed_coverage_and_native_launch_modes(self):
         catalog.validate_seed(SEED)
-        self.assertEqual(len(SEED['links']),49)
-        self.assertTrue(all(x['visibility']=='public' for x in SEED['links']))
+        self.assertEqual(len(SEED['links']),80)
+        self.assertEqual(sum(1 for x in SEED['links'] if x['visibility']=='public'),49)
         self.assertEqual(sum(x.get('launch_mode')=='fnos' for x in SEED['links']),8)
+        self.assertEqual([c['name'] for c in SEED['categories']][-1],'Private Track')
         self.assertIn('website:musicbrainz', {x['catalog_key'] for x in SEED['links']})
         old_urls={x['url'] for x in OLD['links']}
         seed_urls={x['url'] for x in SEED['links']}

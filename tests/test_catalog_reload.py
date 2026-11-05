@@ -97,14 +97,17 @@ class CatalogReloadTests(unittest.TestCase):
     def test_01_overlay_included_in_bootstrap_catalog(self):
         data = self.catalog()
         self.assertIn('MusicBrainz', self.names(data))
-        self.assertEqual(len(data['links']), len(SEED['links']))
+        # catalog() 是匿名视角：只含公开条目。
+        self.assertEqual(len(data['links']),
+                         sum(1 for x in SEED['links'] if x['visibility'] == 'public'))
         self.assertFalse((Path(self.temp.name) / 'seed.json').exists())
 
     def test_02_file_change_applies_without_restart(self):
         self.write_overlay(overlay_document([overlay_link('website:hot', '热加载服务', 'https://hot.homehub.stream:8443/')]))
         data = self.catalog()
         self.assertIn('热加载服务', self.names(data))
-        self.assertEqual(len(data['links']), len(SEED['links']) + 1)
+        self.assertEqual(len(data['links']),
+                         sum(1 for x in SEED['links'] if x['visibility'] == 'public') + 1)
         self.assertIn('MusicBrainz', self.names(data))
         cookie, _ = self.login()
         status, catalog, _ = self.request('GET', '/api/catalog', cookie=cookie)
