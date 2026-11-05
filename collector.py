@@ -1145,8 +1145,9 @@ class SshSampler:
 
         sample['cpu'] = used_fraction(total, self.prev_cpu)
         if cores:
-            while len(parsed['cores'] or []) < len(cores):
-                parsed.setdefault('cores', []).append([])
+            series = parsed.get('cores') or []
+            while len(series) < len(cores):
+                series.append([])
             parsed['cores'] = [used_fraction(one, self.prev_cores[i] if self.prev_cores and i < len(self.prev_cores) else None)
                                for i, one in enumerate(cores)]
         self.prev_cpu, self.prev_cores = total, cores
