@@ -55,8 +55,9 @@ services:
     environment:
       # 公网域名在 NAT 回环下往往探测失败；改走内网反代入口并保留原 Host 头。
       HOMEHUB_COLLECTOR_PROBE_VIA: 10.0.1.2:8443
-    cgroupns: host
     volumes:
+      # /sys/fs/cgroup 的只读 bind mount 直接暴露宿主 cgroup 树（bind 在宿主侧
+      # 解析路径，与容器自身的 cgroup namespace 无关），无需 cgroupns: host。
       - /var/run/docker.sock:/var/run/docker.sock:ro
       - /sys:/host/sys:ro
       - /sys/fs/cgroup:/host/cgroup:ro
