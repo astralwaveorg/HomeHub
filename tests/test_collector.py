@@ -365,7 +365,19 @@ pppoe-wan: 57477542  123456    0    0    0     0          0         0 60353195  
 10.0.1.99 dev br-lan  FAILED
 fe80::1 dev br-lan lladdr aa:bb:cc:00:00:09 STALE
 ---WAN
-{"up": true, "pending": false, "available": true, "autostart": true, "uptime": 84840, "l3_device": "pppoe-wan", "proto": "pppoe", "device": "pppoe-wan", "ipv4-address": [{"address": "60.177.124.16", "mask": 32}]}
+{
+\t"up": true,
+\t"pending": false,
+\t"uptime": 84840,
+\t"proto": "pppoe",
+\t"device": "pppoe-wan",
+\t"ipv4-address": [
+\t\t{
+\t\t\t"address": "60.177.124.16",
+\t\t\t"mask": 32
+\t\t}
+\t]
+}
 ---WIFI
 ---FIREWALL
 firewall.cfg01dc25.default='defaults'
@@ -387,7 +399,19 @@ firewall.@redirect[1].dest_port='51413'
 firewall.@zone[0]=zone
 firewall.@zone[0].name='wan'
 ---BOARD
-{"kernel": "6.6.110", "hostname": "R6S", "model": "FriendlyElec NanoPi R6S", "board_name": "friendlyarm,nanopi-r6s", "release": {"distribution": "ImmortalWrt", "version": "24.10.4", "revision": "r28427", "target": "rockchip/armv8", "description": "ImmortalWrt 24.10.4 r28427"}}
+{
+\t"kernel": "6.6.110",
+\t"hostname": "R6S",
+\t"model": "FriendlyElec NanoPi R6S",
+\t"board_name": "friendlyarm,nanopi-r6s",
+\t"release": {
+\t\t"distribution": "ImmortalWrt",
+\t\t"version": "24.10.4",
+\t\t"revision": "r28427",
+\t\t"target": "rockchip/armv8",
+\t\t"description": "ImmortalWrt 24.10.4 r28427"
+\t}
+}
 """
 
 

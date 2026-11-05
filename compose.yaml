@@ -46,6 +46,12 @@ services:
     container_name: homehub-collector
     user: "0:0"
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:9100/health',timeout=3)"]
+      interval: 30s
+      timeout: 5s
+      start_period: 20s
+      retries: 3
     environment:
       # 公网域名在 NAT 回环下往往探测失败；改走内网反代入口并保留原 Host 头。
       HOMEHUB_COLLECTOR_PROBE_VIA: 10.0.1.2:8443

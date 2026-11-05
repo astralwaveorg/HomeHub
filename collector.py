@@ -1007,7 +1007,7 @@ def parse_openwrt_report(text):
     dhcp = next((one for one in sections.get('dhcp', []) if one.strip().isdigit()), None)
     if dhcp is not None:
         sample['dhcp_leases'] = int(dhcp)
-    board_text = next((one for one in sections.get('board', [])), '')
+    board_text = '\n'.join(sections.get('board', []))
     if board_text.startswith('{'):
         try:
             board = json.loads(board_text)
@@ -1019,7 +1019,7 @@ def parse_openwrt_report(text):
         except ValueError:
             pass
     sample['wan'] = None
-    wan_text = next((one for one in sections.get('wan', [])), '')
+    wan_text = '\n'.join(sections.get('wan', []))
     if wan_text.startswith('{'):
         try:
             wan = json.loads(wan_text)
@@ -1167,6 +1167,9 @@ class SshSampler:
                           key=lambda item: item[1], default=None)
             sample['net_primary'] = busiest[0] if busiest and busiest[1] > 0 else (next(iter(net), None))
         sample['net'] = net
+        # The parsed template carries placeholder net/net_primary; ours are authoritative.
+        parsed.pop('net', None)
+        parsed.pop('net_primary', None)
         sample.update({key: value for key, value in parsed.items()})
         if identity:
             self.info = {**identity, 'kind': self.kind}
