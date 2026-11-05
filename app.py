@@ -43,6 +43,8 @@ ATTEMPTS = {}
 COLLECTOR = os.environ.get('HOMEHUB_COLLECTOR', 'http://collector:9100').rstrip('/')
 COLLECTOR_RANGES = {'1h', '6h', '24h', '7d', '14d'}
 PROBE_SYNC = {'last_error': 0.0}
+# Internal compose-network calls must never honour ambient proxy variables.
+COLLECTOR_OPENER = urllib.request.build_opener(urllib.request.ProxyHandler({}))
 
 class APIError(Exception):
     def __init__(self, status, message):
@@ -281,7 +283,7 @@ def push_probe_targets(force=False):
         payload = json.dumps({'targets': targets}).encode()
         request = urllib.request.Request(COLLECTOR + '/targets', data=payload, method='PUT',
                                          headers={'Content-Type': 'application/json'})
-        with urllib.request.urlopen(request, timeout=5) as response:
+        with COLLECTOR_OPENER.open(request, timeout=5) as response:
             response.read()
         PROBE_SYNC['last_error'] = 0.0
     except (urllib.error.URLError, OSError, ValueError, sqlite3.Error) as error:
@@ -319,7 +321,7 @@ def collector_get(path, query=''):
         else:
             query = '?x=1' + suffix if suffix else ''
     try:
-        with urllib.request.urlopen(COLLECTOR + path + query, timeout=10) as response:
+        with COLLECTOR_OPENER.open(COLLECTOR + path + query, timeout=10) as response:
             return response.read()
     except (urllib.error.URLError, urllib.error.HTTPError, OSError, TimeoutError):
         raise APIError(503, '观测站暂时离线，采集器尚未就绪，请稍后刷新')
