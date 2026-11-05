@@ -1139,13 +1139,20 @@ class SshSampler:
                 return None
             return round(max(0.0, min(100.0, 100 * (1 - delta_idle / delta_total))), 1)
 
-        sample['cpu'] = used_fraction(total, self.prev_cpu)
-        if cores:
-            series = parsed.get('cores') or []
-            while len(series) < len(cores):
-                series.append([])
-            parsed['cores'] = [used_fraction(one, self.prev_cores[i] if self.prev_cores and i < len(self.prev_cores) else None)
-                               for i, one in enumerate(cores)]
+        if total is not None:
+            # OpenWrt-style: percentages come from counter deltas between rounds.
+            parsed.pop('cpu', None)
+            parsed.pop('cores', None)
+            sample['cpu'] = used_fraction(total, self.prev_cpu)
+            if cores:
+                series = []
+                for i, one in enumerate(cores):
+                    series.append(used_fraction(one, self.prev_cores[i] if self.prev_cores and i < len(self.prev_cores) else None))
+                sample['cores'] = series
+        else:
+            # macOS-style: the report already carries the live values.
+            sample['cpu'] = parsed.pop('cpu', None)
+            sample['cores'] = parsed.pop('cores', None)
         self.prev_cpu, self.prev_cores = total, cores
         net = None
         if counters:
@@ -1163,7 +1170,11 @@ class SshSampler:
                           key=lambda item: item[1], default=None)
             sample['net_primary'] = busiest[0] if busiest and busiest[1] > 0 else (next(iter(net), None))
         sample['net'] = net
-        # The parsed template carries placeholder net/net_primary; ours are authoritative.
+        # The parsed template carries placeholder values; the sampler's own
+        # delta-based cpu/cores/net readings are authoritative when present.
+        if total is not None:
+            parsed.pop('cpu', None)
+            parsed.pop('cores', None)
         parsed.pop('net', None)
         parsed.pop('net_primary', None)
         sample.update({key: value for key, value in parsed.items()})
