@@ -24,6 +24,8 @@ class AppTests(unittest.TestCase):
         os.environ['HOMEHUB_DATA'] = cls.temp.name
         os.environ['HOMEHUB_ORIGIN'] = 'https://homehub.stream:8443'
         os.environ['HOMEHUB_COOKIE_SECURE'] = 'true'
+        # 指向必被拒绝的回环端口：503 用例不再依赖对 'collector' 的 DNS 解析。
+        os.environ['HOMEHUB_COLLECTOR'] = 'http://127.0.0.1:1'
         spec = importlib.util.spec_from_file_location('homehub_under_test', ROOT/'app.py')
         cls.app = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(cls.app)
