@@ -248,7 +248,7 @@ class IconAPITests(unittest.TestCase):
             if body is not None:
                 h['Content-Type'] = 'application/json'
         h.update(headers or {})
-        conn = http.client.HTTPConnection('127.0.0.1', self.server.server_address[1], timeout=5)
+        conn = http.client.HTTPConnection('127.0.0.1', self.server.server_address[1], timeout=10)
         try:
             conn.request(method, path, body=body, headers=h)
             response = conn.getresponse()

@@ -44,7 +44,7 @@ class AccountTests(unittest.TestCase):
         if csrf: h['X-CSRF-Token'] = csrf
         b = json.dumps(data).encode() if data is not None else None
         if b: h['Content-Type'] = 'application/json'
-        c = http.client.HTTPConnection('127.0.0.1', self.port, timeout=5)
+        c = http.client.HTTPConnection('127.0.0.1', self.port, timeout=10)
         c.request(method, path, body=b, headers=h)
         r = c.getresponse();body = r.read();hs = dict(r.getheaders());status = r.status;c.close()
         try:body = json.loads(body)

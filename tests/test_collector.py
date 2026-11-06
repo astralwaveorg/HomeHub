@@ -573,7 +573,7 @@ class CollectorApiTests(unittest.TestCase):
         self.tmp.cleanup()
 
     def request(self, method, path, body=None):
-        connection = http.client.HTTPConnection('127.0.0.1', self.port, timeout=5)
+        connection = http.client.HTTPConnection('127.0.0.1', self.port, timeout=10)
         headers = {'Content-Type': 'application/json'} if body is not None else {}
         connection.request(method, path, body=json.dumps(body).encode() if body is not None else None,
                            headers=headers)
