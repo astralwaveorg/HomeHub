@@ -65,8 +65,10 @@ for pair in os.environ.get('HOMEHUB_COLLECTOR_VOLUMES', '/host/root:/,/vol1:/vol
         if not any(v[1] == label for v in VOLUMES):
             VOLUMES.append((source, label))
 
-RANGES = {'1h': 3600, '6h': 21600, '24h': 86400, '7d': 604800, '14d': 1296000}
-STEPS = {'1h': 60, '6h': 120, '24h': 300, '7d': 1800, '14d': 3600}
+RANGES = {'10m': 600, '30m': 1800, '1h': 3600, '6h': 21600, '24h': 86400, '7d': 604800, '14d': 1296000}
+# Short spans render straight from the in-memory ring at native sampling rate;
+# step only governs per-container minute rollups there.
+STEPS = {'10m': 30, '30m': 30, '1h': 60, '6h': 120, '24h': 300, '7d': 1800, '14d': 3600}
 PRIVATE_HOST = re.compile(r'^(10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.|127\.|::1|localhost)', re.I)
 
 
