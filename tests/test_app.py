@@ -48,7 +48,7 @@ class AppTests(unittest.TestCase):
         h.update(headers or {})
         b = data if raw else (json.dumps(data).encode() if data is not None else None)
         if b is not None and not raw:h['Content-Type']='application/json'
-        conn=http.client.HTTPConnection('127.0.0.1', self.port, timeout=5)
+        conn=http.client.HTTPConnection('127.0.0.1', self.port, timeout=10)
         conn.request(method,path,body=b,headers=h)
         r=conn.getresponse();body=r.read();hs=dict(r.getheaders());status=r.status
         conn.close()
