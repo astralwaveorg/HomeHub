@@ -806,13 +806,32 @@ class Prober:
                 time.sleep(rest)
 
     def probe_round(self):
+        """Probe every target with a small worker pool so one round stays well
+        under PROBE_INTERVAL even when many endpoints are slow or timing out."""
         targets = self.list_targets()
         now = int(time.time())
-        for key, _name, url in targets:
-            result = self.probe_once(url)
-            with connect(self.store.path) as c:
-                c.execute('INSERT OR REPLACE INTO probes(ts,key,ok,ms,code) VALUES(?,?,?,?,?)',
-                          (now, key, 1 if result['ok'] else 0, result['ms'], result['code']))
+        queue = list(targets)
+        lock = threading.Lock()
+
+        def worker():
+            while True:
+                with lock:
+                    if not queue:
+                        return
+                    key, _name, url = queue.pop()
+                try:
+                    result = self.probe_once(url)
+                except Exception:
+                    result = {'ok': False, 'code': None, 'ms': None}
+                with connect(self.store.path) as c:
+                    c.execute('INSERT OR REPLACE INTO probes(ts,key,ok,ms,code) VALUES(?,?,?,?,?)',
+                              (now, key, 1 if result['ok'] else 0, result['ms'], result['code']))
+
+        workers = [threading.Thread(target=worker, daemon=True) for _ in range(6)]
+        for thread in workers:
+            thread.start()
+        for thread in workers:
+            thread.join(PROBE_INTERVAL)
 
 
 # ---- Remote devices over SSH -----------------------------------------------------
@@ -902,8 +921,7 @@ def parse_mac_report(text):
     if load_match:
         sample['load'] = {'avg': [float(load_match.group(i)) for i in (1, 2, 3)],
                           'running': None, 'procs': sample['processes'], 'last_pid': None}
-    up_match = re.search(r'up\s+([^,]+)(?:,\s*([^,]+))?,?\s*\d+\s*user', up_text) or re.search(r'up\s+(.+?),\s*load', up_text)
-    if up_match:
+    if up_text:
         sample['uptime'] = parse_uptime_text(up_text)
     for line in sections.get('df', [])[1:]:
         fields = line.split()
