@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.10.3
+
+- Private Track 分类调整：`fengchao.chat/settings?tab=moviepilot` 由「蜂巢」更名为 **PT人生**（经 `legacy_names` 驱动线上改名），新增 **丰巢论坛**（`https://fengchao.chat/`）；内置目录 80 → 81 个入口。
+
 ## 1.10.2
 
 - 星图全部 80 个入口改为公开可见（含 31 个 Private Track 条目，owner 授权的一次性 `--publish-existing`）；匿名访客现在能看到完整目录，PT 个人页地址本就需要各自登录，不构成信息泄露。

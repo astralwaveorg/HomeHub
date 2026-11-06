@@ -220,8 +220,8 @@ class CatalogTests(unittest.TestCase):
 
     def test_seed_coverage_and_native_launch_modes(self):
         catalog.validate_seed(SEED)
-        self.assertEqual(len(SEED['links']),80)
-        self.assertEqual(sum(1 for x in SEED['links'] if x['visibility']=='public'),80)
+        self.assertEqual(len(SEED['links']),81)
+        self.assertEqual(sum(1 for x in SEED['links'] if x['visibility']=='public'),81)
         self.assertEqual(sum(x.get('launch_mode')=='fnos' for x in SEED['links']),8)
         self.assertEqual([c['name'] for c in SEED['categories']][-1],'Private Track')
         self.assertIn('website:musicbrainz', {x['catalog_key'] for x in SEED['links']})

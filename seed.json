@@ -1044,16 +1044,19 @@
     },
     {
       "category_id": 8,
-      "name": "蜂巢",
+      "name": "PT人生",
       "url": "https://fengchao.chat/settings?tab=moviepilot",
-      "description": "社区论坛",
+      "description": "丰巢社区 · MoviePilot 接入设置",
       "icon": "star",
       "pinned": false,
       "visibility": "public",
       "rank": 270,
-      "aliases": "fengchao 蜂巢 moviepilot",
+      "aliases": "fengchao 丰巢 蜂巢 pt人生 moviepilot",
       "catalog_key": "website:pt-fengchao",
-      "launch_mode": "direct"
+      "launch_mode": "direct",
+      "legacy_names": [
+        "蜂巢"
+      ]
     },
     {
       "category_id": 8,
@@ -1105,6 +1108,19 @@
       "rank": 310,
       "aliases": "monitor 监控 pt-plugins",
       "catalog_key": "website:pt-monitor",
+      "launch_mode": "direct"
+    },
+    {
+      "category_id": 8,
+      "name": "丰巢论坛",
+      "url": "https://fengchao.chat/",
+      "description": "丰巢社区论坛",
+      "icon": "star",
+      "pinned": false,
+      "visibility": "public",
+      "rank": 320,
+      "aliases": "fengchao 丰巢 蜂巢 论坛",
+      "catalog_key": "website:pt-fengchaoforum",
       "launch_mode": "direct"
     }
   ]
