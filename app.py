@@ -41,7 +41,7 @@ AUTH_LOCK = threading.Lock()
 ATTEMPTS = {}
 # Orbit collector on the compose-internal network; metrics are LAN-public data.
 COLLECTOR = os.environ.get('HOMEHUB_COLLECTOR', 'http://collector:9100').rstrip('/')
-COLLECTOR_RANGES = {'1h', '6h', '24h', '7d', '14d'}
+COLLECTOR_RANGES = {'10m', '30m', '1h', '6h', '24h', '7d', '14d'}
 PROBE_SYNC = {'last_error': 0.0}
 # Internal compose-network calls must never honour ambient proxy variables.
 COLLECTOR_OPENER = urllib.request.build_opener(urllib.request.ProxyHandler({}))

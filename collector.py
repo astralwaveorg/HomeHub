@@ -579,18 +579,27 @@ class Store:
         system = {'t': [], 'cpu': [], 'cores': [], 'load': [], 'mem_used': [], 'mem_cached': [],
                   'swap_used': [], 'net': {}, 'io': {}, 'vol': {}, 'temp': {}, 'docker_cpu': [],
                   'docker_mem': [], 'docker_running': [], 'uptime': [], 'procs': []}
-        latest = self.tail(1, device)
-        with connect(self.path) as c:
-            rows = c.execute('SELECT ts,data FROM samples WHERE ts>=? AND device=? ORDER BY ts',
-                             (floor, device)).fetchall()
-        stream = [json.loads(one[1]) for one in rows if (one[0] // 60 * 60) % step < 60 or one[0] == floor]
-        for sample in stream:
-            minute = sample['t'] // 60 * 60
-            if system['t'] and minute <= system['t'][-1]:
-                continue
-            append_series(system, sample)
-        if latest and (not system['t'] or latest[0]['t'] - system['t'][-1] >= 60):
-            append_series(system, latest[0])
+        if span <= 1800:
+            # 10m/30m: native-resolution ring read keeps the curves smooth.
+            for sample in list(self.ring(device)):
+                if sample['t'] < now - span:
+                    continue
+                if system['t'] and sample['t'] <= system['t'][-1]:
+                    continue
+                append_series(system, sample)
+        else:
+            latest = self.tail(1, device)
+            with connect(self.path) as c:
+                rows = c.execute('SELECT ts,data FROM samples WHERE ts>=? AND device=? ORDER BY ts',
+                                 (floor, device)).fetchall()
+            stream = [json.loads(one[1]) for one in rows if (one[0] // 60 * 60) % step < 60 or one[0] == floor]
+            for sample in stream:
+                minute = sample['t'] // 60 * 60
+                if system['t'] and minute <= system['t'][-1]:
+                    continue
+                append_series(system, sample)
+            if latest and (not system['t'] or latest[0]['t'] - system['t'][-1] >= 60):
+                append_series(system, latest[0])
         pad_series(system)
         containers = self.container_summary(floor) if extras else []
         probes = self.probe_summary(floor) if extras else []

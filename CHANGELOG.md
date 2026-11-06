@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.10.1
+
+- 星轨顶部控件全部改为紧凑下拉菜单（设备 / 统计时长 / 刷新频率一行三个原生 `<select>`，移动端触发系统原生选择器），替换原先三排 chips——移动端不再拥挤，桌面端更清爽；离线设备在下拉选项中标注「·离线」。
+- 统计时长新增 **10 分钟** 与 **30 分钟** 两档：短档直接从采集器内存环形缓冲按原生 5 秒分辨率读取（不做分钟降采样），曲线平滑；容器详情轨迹与门户型白名单同步支持新档。
+
 ## 1.10.0
 
 - 星图新增 **Private Track** 分类（第 8 个分类，31 个入口）：30 个 PT 站点的个人页面 + pt-plugins 在线监控站。名称与备注逐个核对自 pt-plugins 监控站与各站自身页面（M-Team、AGSVPT、Audiences、ToTheGlory、憨憨、UBits、CrabPt、U2、PTTime、HDTime、DICMusic、OpenCD、JPopSuki、BTSchool、好学、星陨阁、CyanBug、CarPT、lajidui、LemonHD、下水道、三月传媒、PTSkit、Kelu、HappyFappy、蜜柑计划、蜂巢、DiscFan、SkyeySnow、HDDolby、PT 站点监控）。

@@ -1613,25 +1613,35 @@ dialog::backdrop {
 .orbit-toolbar {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 10px 18px;
+  gap: 9px;
   flex-wrap: wrap;
-  margin: 0 0 18px;
+  margin: 0 0 16px;
 }
-.orbit-ranges {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
+.orbit-select {
+  appearance: none;
+  -webkit-appearance: none;
+  background: #15152680
+    url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='8' height='5'%3E%3Cpath d='M0 0l4 5 4-5z' fill='%23b1b1c9'/%3E%3C/svg%3E")
+    no-repeat right 12px center;
+  border: 1px solid var(--line);
+  border-radius: 30px;
+  padding: 7px 28px 7px 15px;
+  color: var(--text);
+  font-size: 12.5px;
+  max-width: 46vw;
+  text-overflow: ellipsis;
+  cursor: pointer;
 }
-.orbit-refresh {
-  display: flex;
-  align-items: center;
-  gap: 7px;
+.orbit-select:hover {
+  border-color: #c4afdf65;
 }
-.orbit-refresh-label {
-  font-size: 11px;
-  color: var(--muted);
-  margin-right: 2px;
+.orbit-select:focus-visible {
+  outline: 2px solid var(--gold);
+  outline-offset: 2px;
+}
+.orbit-select option {
+  background: #191a30;
+  color: var(--text);
 }
 .orbit-vitals {
   display: grid;
@@ -2142,6 +2152,16 @@ dialog::backdrop {
   }
 }
 @media (max-width: 650px) {
+  .orbit-toolbar {
+    gap: 7px;
+  }
+  .orbit-select {
+    flex: 1 1 30%;
+    min-width: 0;
+    padding: 8px 24px 8px 12px;
+    font-size: 12px;
+    background-position: right 10px center;
+  }
   .orbit-vitals {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
@@ -2174,19 +2194,7 @@ dialog::backdrop {
   }
 }
 
-/* 星轨 · 设备切换与路由器专属面板 */
-.orbit-devices {
-  margin: 0 0 18px;
-  min-height: 34px;
-}
-.orbit-device-hint {
-  font-size: 11px;
-  color: var(--muted);
-  padding: 7px 2px;
-}
-.chip.orbit-device.offline {
-  opacity: 0.45;
-}
+/* 星轨 · 路由器专属面板 */
 .gateway-conn {
   margin-top: 6px;
 }

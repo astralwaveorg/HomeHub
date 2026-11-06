@@ -2066,6 +2066,8 @@
   // ===== 星轨 · 系统观测 =====
 
   const ORBIT_RANGES = [
+    ["10m", "10 分钟"],
+    ["30m", "30 分钟"],
     ["1h", "1 小时"],
     ["6h", "6 小时"],
     ["24h", "24 小时"],
@@ -2439,42 +2441,30 @@
     orbitFetchHistory();
   }
 
-  function renderDeviceChips() {
-    const holder = orbitState.refs.orbitDevices;
+  function populateDeviceSelect() {
+    const holder = orbitState.refs.deviceSelect;
     if (!holder) return;
-    const devices = orbitState.devices;
-    holder.replaceChildren();
-    if (!devices.length) {
-      holder.append(el("span", "orbit-device-hint", "正在发现设备…"));
-      return;
-    }
+    const devices = orbitState.devices.length
+      ? orbitState.devices
+      : orbitState.snap && orbitState.snap.device
+        ? [orbitState.snap.device]
+        : [];
+    if (!devices.length) return;
     const symbols = { nas: "▤", mac: "⌂", openwrt: "⌁" };
     const activeName =
       ((orbitState.snap && orbitState.snap.device) || {}).name ||
       orbitState.device;
+    holder.replaceChildren();
     devices.forEach((d) => {
-      const active = d.name === activeName;
-      const chip = button(
-        `${symbols[d.kind] || "▤"} ${d.name}`,
-        "chip orbit-device" +
-          (active ? " active" : "") +
-          (d.online === false ? " offline" : ""),
-        () => {
-          if (!active) switchDevice(d.name);
-        },
+      const option = el(
+        "option",
+        "",
+        `${symbols[d.kind] || "▤"} ${d.name}${d.online === false ? " ·离线" : ""}`,
       );
-      chip.title = [
-        d.role,
-        d.kind === "nas"
-          ? "本机"
-          : d.error
-            ? "SSH 拉取：" + d.error
-            : "SSH 拉取",
-      ]
-        .filter(Boolean)
-        .join(" · ");
-      chip.setAttribute("aria-pressed", String(active));
-      holder.append(chip);
+      option.value = d.name;
+      if (d.name === activeName) option.selected = true;
+      option.title = d.role || "";
+      holder.append(option);
     });
   }
 
@@ -2532,11 +2522,6 @@
       subtitle,
     );
     heading.append(titles);
-    const devices = el("div", "categories orbit-devices");
-    devices.id = "orbit-devices";
-    devices.setAttribute("aria-label", "选择设备");
-    orbitState.refs.orbitDevices = devices;
-    renderDeviceChips();
     const offline = el("div", "orbit-offline");
     offline.setAttribute("role", "alert");
     offline.hidden = true;
@@ -2547,46 +2532,44 @@
         orbitFetchHistory();
       }),
     );
-    const chips = el("div", "orbit-toolbar");
-    const rangeChips = el("div", "categories orbit-ranges");
-    rangeChips.setAttribute("aria-label", "历史时间范围");
+    const toolbar = el("div", "orbit-toolbar");
+    const deviceSelect = el("select", "orbit-select orbit-device-select");
+    deviceSelect.setAttribute("aria-label", "选择设备");
+    orbitState.refs.deviceSelect = deviceSelect;
+    populateDeviceSelect();
+    deviceSelect.addEventListener("change", () => {
+      if (deviceSelect.value) switchDevice(deviceSelect.value);
+    });
+    const rangeSelect = el("select", "orbit-select");
+    rangeSelect.setAttribute("aria-label", "统计时长");
     ORBIT_RANGES.forEach(([value, label]) => {
-      const node = button(
-        label,
-        "chip" + (orbitState.range === value ? " active" : ""),
-        () => {
-          orbitState.range = value;
-          store.set("orbitRange", value);
-          syncChips(rangeChips, label);
-          orbitFetchHistory();
-        },
-      );
-      node.setAttribute("aria-pressed", String(orbitState.range === value));
-      rangeChips.append(node);
+      const option = el("option", "", label);
+      option.value = value;
+      if (orbitState.range === value) option.selected = true;
+      rangeSelect.append(option);
     });
-    const refreshChips = el("div", "categories orbit-refresh");
-    refreshChips.setAttribute("aria-label", "实时刷新频率");
-    const refreshLabel = el("span", "orbit-refresh-label", "刷新");
-    refreshChips.append(refreshLabel);
+    rangeSelect.value = orbitState.range;
+    rangeSelect.addEventListener("change", () => {
+      orbitState.range = rangeSelect.value;
+      store.set("orbitRange", orbitState.range);
+      orbitFetchHistory();
+    });
+    const refreshSelect = el("select", "orbit-select");
+    refreshSelect.setAttribute("aria-label", "实时刷新频率");
     ORBIT_REFRESH.forEach(([seconds, label]) => {
-      const node = button(
-        label,
-        "chip" + (orbitState.interval === seconds ? " active" : ""),
-        () => {
-          orbitState.interval = seconds;
-          store.set("orbitInterval", seconds);
-          syncChips(refreshChips, label);
-          restartOrbitSnapshotTimer();
-          orbitFetchSnapshot();
-        },
-      );
-      node.setAttribute(
-        "aria-pressed",
-        String(orbitState.interval === seconds),
-      );
-      refreshChips.append(node);
+      const option = el("option", "", label);
+      option.value = String(seconds);
+      if (orbitState.interval === seconds) option.selected = true;
+      refreshSelect.append(option);
     });
-    chips.append(rangeChips, refreshChips);
+    refreshSelect.value = String(orbitState.interval);
+    refreshSelect.addEventListener("change", () => {
+      orbitState.interval = Number(refreshSelect.value);
+      store.set("orbitInterval", orbitState.interval);
+      restartOrbitSnapshotTimer();
+      orbitFetchSnapshot();
+    });
+    toolbar.append(deviceSelect, rangeSelect, refreshSelect);
     const vitals = el("div", "orbit-vitals");
     const refs = orbitState.refs;
     refs.cpu = vitalCard("CPU", "加载中");
@@ -2739,7 +2722,7 @@
     }
     grid.append(cpuPanel, memPanel, netPanel);
     if (storagePanel) grid.append(storagePanel);
-    main.append(heading, devices, offline, chips, vitals, grid);
+    main.append(heading, offline, toolbar, vitals, grid);
     orbitFetchSnapshot();
     orbitFetchHistory();
     restartOrbitSnapshotTimer();
@@ -2808,7 +2791,7 @@
       return;
     }
     orbitState.devices = snap.devices || [];
-    renderDeviceChips();
+    populateDeviceSelect();
     const s = snap.sample || {};
     const info = snap.info || {};
     const tail = snap.tail || {};
